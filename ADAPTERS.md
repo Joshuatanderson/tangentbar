@@ -12,9 +12,9 @@ Rungs: `1` full AX (word+context) · `2` selection-only · `2b` value-only ·
 
 | Status | Target | Expected rung | Adapter notes |
 |---|---|---|---|
-| [x] proven | Chromium browsers (Brave) | 1 via selection | Lazy `AXEnhancedUserInterface` nudge per pid; never tree-walk. Point lookup may land on AXGroup/AXImage — selection path is primary. |
-| [x] proven | Discord (Electron) | 1 | Works. Context clamps to the per-message `AXTextArea` → needs parent/sibling gathering (engine item below). |
-| [x] proven | cmux / ghostty (GPU terminal) | 3a | ghostty copy-on-select writes the pasteboard at click time; read it, don't synthesize. |
+| [x] proven | Chromium browsers (Brave) | 1 via selection | Lazy `AXEnhancedUserInterface` nudge per pid; never tree-walk. Point lookup may land on AXGroup/AXImage — selection path is primary. Live use (2026-07-03) also lands `2-selection-only` with context==word → covered by cross-merge (`+x`) and kin gathering (`+kin`). |
+| [x] proven | Discord (Electron) | 1 | Works. Context clamped to the per-message `AXTextArea` → kin gathering (`+kin`) stitches sibling text. |
+| [x] proven | cmux / ghostty (GPU terminal) | 3a | ghostty copy-on-select writes the pasteboard at click time; read it, don't synthesize. Context via cmux CLI `capture-pane` (`+term`, `Extract/TerminalContext.swift`) — the click focused the pane, so the CLI's default surface is the right one. |
 | [ ] pending | Safari (WebKit) | 1 | Should be cleanest browser; verify — WebKit ≠ Chromium AX. |
 | [ ] pending | Native Cocoa text (Notes, TextEdit, Mail) | 1 | Expected gold path; confirm with clicks. |
 | [ ] pending | Slack (Electron) | 1 | Expect Discord-equivalent after nudge. |
@@ -35,8 +35,11 @@ Rungs: `1` full AX (word+context) · `2` selection-only · `2b` value-only ·
       unreachable, and the quality option later.
 - [ ] **True streaming for the claude fallback** — `--output-format stream-json`
       parsing (plain `-p` flushes mostly at once); the local SSE path already streams.
-- [ ] **Context gathering for per-message elements** (Discord/Slack): when the hit
-      element's text is small, pull sibling/parent `AXStaticText` for grounding.
+- [x] **Context gathering for per-message elements** (Discord/Slack): DONE as the
+      context ladder (D9): cross-merge both extraction paths' contexts (`+x`), kin
+      gathering up 3 ancestors (`+kin`), terminal buffer via cmux CLI (`+term`),
+      and an honest no-context prompt when all rungs come up dry. OCR remains the
+      v3 floor (Josh: acceptable eventually, exhaust AX/adapters first).
 - [ ] **Word fallback chain** — selection → range-word → first word of context →
       clipboard, so `word:` is never empty when context exists.
 - [ ] **Multi-word phrases** — the app's double-click selection is source of truth;

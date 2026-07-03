@@ -14,14 +14,26 @@ final class Engine {
 
     /// Mirrors v1 tangent.rs: a short, constant dictionary framing; the
     /// grounding context is a snapshot, isolated from any main conversation.
+    /// Honesty rule: when extraction produced no real context, say so instead
+    /// of presenting the bare word as a passage — the model then gives its
+    /// most common meaning rather than hallucinating a situational one.
     static func tangentPrompt(word: String, context: String) -> String {
-        """
+        let passage = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard passage.count > word.count + 10 else {
+            return """
+            Define "\(word)" in 2–4 short sentences. No surrounding context is \
+            available, so give the most common meaning; if it is primarily \
+            jargon, name the field it comes from. Answer with the definition \
+            only — no preamble.
+            """
+        }
+        return """
         Define "\(word)" as it is used in the passage below, in 2–4 short \
         sentences. If it is jargon, name the field it comes from. Answer with \
         the definition only — no preamble.
 
         Passage:
-        \(context)
+        \(passage)
         """
     }
 

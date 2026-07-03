@@ -263,7 +263,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engine.streamTangent(word: word,
                              context: "The conversation went off on a \(word) about medieval siege engines.",
                              config: config,
-                             onChunk: { print($0, terminator: ""); FileHandle.standardOutput.synchronizeFile() },
+                             onChunk: { print($0, terminator: ""); fflush(stdout) },
                              onDone: { status in
                                  print("\n[\(status)]")
                                  exit(0)

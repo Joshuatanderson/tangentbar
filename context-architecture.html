@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Contextual definitions — where context comes from</title>
+<style>
+  /* TangentBar's own tokens: paper #faf6ec, ink #1d2433, accent #3a4d8f (Pill.swift) */
+  :root { --bg:#faf6ec; --card:#ffffff; --ink:#1d2433; --muted:#6d7280; --line:#e3ddcc;
+          --action:#3a4d8f; --ok:#3f7d4e; --caution:#a8730a; --blocker:#a83232; --assume:#6b4d8f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.6 Charter, Georgia, serif; background:var(--bg);
+         color:var(--ink); padding:32px; max-width:920px; margin-inline:auto; }
+  h1 { font:600 26px "Iowan Old Style", Georgia, serif; margin:0 0 4px; }
+  h2 { font:600 17px "Iowan Old Style", Georgia, serif; margin:0 0 10px; }
+  .sub { color:var(--muted); margin-bottom:24px; font-size:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin-bottom:18px; }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; margin:10px 0; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-family:-apple-system, sans-serif; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  code { font:12.5px ui-monospace, "SF Mono", Menlo, monospace; background:#f1ecdd; border-radius:4px; padding:1px 5px; }
+  .good { color:var(--ok); font-weight:600; } .bad { color:var(--blocker); font-weight:600; } .mid { color:var(--caution); font-weight:600; }
+  .callout { border-left:4px solid var(--assume); background:#f3eef8; padding:12px 14px; border-radius:8px; margin:12px 0; font-size:14px; }
+  .callout.arch { border-color:var(--action); background:#eef1f8; }
+  .callout.caution { border-color:var(--caution); background:#f8f2e4; }
+  .callout b { display:block; margin-bottom:4px; font-family:-apple-system, sans-serif; font-size:13px; }
+  .term { position:relative; border-bottom:1px dashed var(--assume); cursor:pointer; }
+  .term:hover, .term.open { color:var(--assume); border-bottom-style:solid; }
+  .term > .def { display:none; position:absolute; left:0; top:calc(100% + 8px); z-index:20;
+                 width:max-content; max-width:min(320px,70vw); background:var(--card);
+                 border:1px solid var(--assume); border-radius:8px; padding:10px 12px;
+                 font-size:13px; line-height:1.5; color:var(--ink); white-space:normal;
+                 box-shadow:0 8px 28px rgba(29,36,51,.18); cursor:auto; }
+  .term.open > .def { display:block; }
+  .term > .def b { color:var(--assume); }
+  .opt-card { border:1px solid var(--line); border-radius:10px; padding:13px 15px; margin:12px 0; }
+  .opt-card h3 { font:600 15px -apple-system, sans-serif; margin:0 0 6px; }
+  .opt-card .traits { font-family:-apple-system, sans-serif; font-size:12.5px; color:var(--muted); margin:6px 0; }
+  .opt-card.rejected { border-color:var(--blocker); background:#faf1f1; }
+  .decision { border:1.5px solid var(--line); border-radius:10px; padding:14px 16px; margin:14px 0; }
+  .decision.rec { border-color:var(--ok); }
+  .pill { display:inline-block; font:600 11.5px -apple-system, sans-serif; color:var(--ok); border:1px solid var(--ok);
+          border-radius:999px; padding:1px 9px; margin-left:8px; vertical-align:2px; }
+  .opts { display:flex; flex-direction:column; gap:7px; margin:10px 0; font-size:14px; }
+  label.opt { cursor:pointer; }
+  textarea { width:100%; min-height:52px; background:#fbf9f2; color:var(--ink); border:1px solid var(--line);
+             border-radius:8px; padding:8px; font:13.5px -apple-system, sans-serif; resize:vertical; }
+  .note-label { color:var(--muted); font-size:12.5px; margin:8px 0 4px; font-family:-apple-system, sans-serif; }
+  footer { position:sticky; bottom:0; padding:14px 0; background:linear-gradient(transparent, var(--bg) 30%); }
+  button { background:var(--action); color:#fff; border:0; border-radius:8px; padding:10px 18px;
+           font:600 14px -apple-system, sans-serif; cursor:pointer; }
+  pre#out { white-space:pre-wrap; background:#fbf9f2; border:1px solid var(--line); border-radius:8px;
+            padding:14px; margin-top:14px; display:none; font-size:12.5px; }
+  #toast { position:fixed; right:24px; bottom:24px; background:var(--ok); color:#fff; padding:8px 14px;
+           border-radius:8px; opacity:0; transition:opacity .2s; font-family:-apple-system, sans-serif; }
+</style>
+</head>
+<body>
+  <h1>Contextual definitions — where context comes from</h1>
+  <div class="sub">Architecture review · no implementation yet · TangentBar, 2026-07-03</div>
+
+  <section>
+    <h2>TL;DR</h2>
+    <p>The engine <em>already</em> defines contextually on the good extraction rungs: rung&nbsp;1 and 2 capture <strong>±400 characters</strong> (≈60–70 words) around the clicked word via the <span class="term">AX API<span class="def"><b>AX (Accessibility) API</b> — macOS's assistive-technology interface. Apps expose their text and UI structure through it, so we can read the text around a click without touching the user's selection or clipboard.</span></span>, and the prompt already carries it as a <code>Passage:</code>. That's more than the 10–20 words each side you asked for.</p>
+    <div class="callout caution"><b>Why it felt non-contextual</b>
+      Your test ran in cmux, which extracts via rung <code>3a-copy-on-select</code> — the pasteboard contains <em>only the double-clicked word</em>, so context == word and the model defines blind. The gap is specific to the clipboard rungs (GPU terminals, and anything else where AX fails), not global. The architecture question is: <strong>how do we get surrounding text where AX can't give it to us?</strong></div>
+    <div class="callout arch"><b>Architectural clarification: no visible highlight needed</b>
+      "Highlight more than one word" doesn't require selecting more text in the target app. On AX rungs the context is read invisibly (<code>AXStringForRange</code>) — the user's one-word selection stays untouched. Actually expanding the visible selection would mean mutating another app's state, and is rejected below. If you specifically <em>want</em> the passage visibly highlighted as feedback, that's a different (UI) feature — say so in notes.</div>
+  </section>
+
+  <section>
+    <h2>Context per rung, today</h2>
+    <table>
+      <tr><th>Rung</th><th>Apps (proven)</th><th>Context captured</th><th></th></tr>
+      <tr><td><code>1-full-ax</code></td><td>Brave, Discord, native text</td><td>±400 chars around the clicked word</td><td class="good">contextual</td></tr>
+      <tr><td><code>2-selection+value</code></td><td>fields exposing value</td><td>±400 chars around selection</td><td class="good">contextual</td></tr>
+      <tr><td><code>2b-value-only</code></td><td>odd fields</td><td>first 800 chars of the element (not centered on the word)</td><td class="mid">weak</td></tr>
+      <tr><td><code>1</code> on tiny elements</td><td>Discord/Slack per-message bubbles</td><td>clamps to the one message (spike saw 8 chars)</td><td class="mid">clamped</td></tr>
+      <tr><td><code>3a / 3b</code> clipboard</td><td><strong>cmux/ghostty</strong>, Zed?, Google&nbsp;Docs?</td><td>the word only</td><td class="bad">none</td></tr>
+    </table>
+    <p style="font-size:13.5px; color:var(--muted);">Baseline fix regardless of anything below: when context == word, the prompt should say "no surrounding context available" instead of presenting the bare word as a passage — the model stops pretending and gives a clean general definition.</p>
+  </section>
+
+  <section>
+    <h2>Options for the gap</h2>
+
+    <div class="opt-card">
+      <h3>A — Parent/sibling AX gathering <span style="color:var(--muted); font-weight:400;">(fixes the "clamped" rows)</span></h3>
+      When the hit element's text is tiny, read the parent's other <code>AXStaticText</code> children (bounded: one or two levels, N siblings) and stitch a passage. Already a listed work item from the spike.
+      <div class="traits">Fidelity: exact text · Coverage: chat apps &amp; fragmented UIs · Permissions: none new · Latency: ~ms · Risk: low (read-only AX)</div>
+    </div>
+
+    <div class="opt-card">
+      <h3>B — Terminal adapter <span style="color:var(--muted); font-weight:400;">(fixes cmux/ghostty — your daily driver)</span></h3>
+      Ask the terminal itself for its buffer: <code>tmux capture-pane -p</code> when the pane runs tmux, or the cmux CLI's pane-text read. Locate the copied word in the dump, window ±N words. Exact text, no OCR noise, no new permissions.
+      <div class="traits">Fidelity: exact text · Coverage: terminals with a CLI (cmux/tmux; plain ghostty has no dump CLI) · Permissions: none · Latency: ~10–50 ms · Risk: coupling to CLI availability</div>
+      <div class="callout" style="margin:10px 0 2px;"><b>Assumption to verify</b> The double-click that triggered us also focused the clicked pane, so "active pane" == "clicked pane" when we shell out. Believed true (first click focuses), needs a real-world check — and multi-session targeting via <code>$TMUX</code>-less lookup needs a rule.</div>
+    </div>
+
+    <div class="opt-card">
+      <h3>C — OCR rung <span style="color:var(--muted); font-weight:400;">(the universal floor — was already penciled as "v3")</span></h3>
+      Screenshot a region around the click (<span class="term">ScreenCaptureKit<span class="def"><b>ScreenCaptureKit</b> — Apple's modern screen-capture framework. Any use of it requires the user to grant Screen Recording permission to the app.</span></span>) and run Apple's on-device Vision text recognizer. Bounding boxes let us locate the clicked word geometrically and assemble the passage in reading order. Works <em>everywhere</em>: bare ghostty, Zed, Google Docs canvas, scanned PDFs, images, video frames.
+      <div class="traits">Fidelity: OCR-grade (errors, column/layout garbling) · Coverage: universal · Permissions: <strong>Screen Recording</strong> · Latency: ~100–300 ms · Risk: moderate complexity</div>
+      <div class="callout caution" style="margin:10px 0 2px;"><b>The permission is the real cost</b>
+        Screen Recording is a heavy <span class="term">TCC<span class="def"><b>TCC</b> — Transparency, Consent, and Control: macOS's per-app permission database (the Privacy &amp; Security prompts). Screen Recording is one of its scariest grants, and macOS Sequoia re-nags for it periodically.</span></span> grant, and recent macOS re-prompts for it periodically. For a personal tool that's a one-time annoyance; for anything distributed it's a real adoption tax. It also philosophically changes the app from "reads accessibility text" to "can see your screen".</div>
+    </div>
+
+    <div class="opt-card rejected">
+      <h3>D — Synthetic selection expansion — rejected</h3>
+      Synthesize ⇧⌥→/triple-click to grow the real selection, copy, restore. Visibly stomps the user's selection, racy to restore, per-app divergent behavior, and terminals interpret those keys as input. The clipboard rung (3b) is already the most invasive thing we do; this doubles down in the wrong direction.
+      <div class="traits">Fidelity: exact · Coverage: broad in theory · Risk: <strong>user-visible side effects — disqualifying</strong></div>
+    </div>
+
+    <div class="callout arch"><b>Shape: a context ladder mirroring the word ladder</b>
+      These aren't alternatives — they compose, ordered by fidelity: AX range → AX value → sibling gathering (A) → app adapter (B) → OCR (C). Each rung fires only when the one above produced fewer than ~N words of context. One new concept in the codebase, not three features.</div>
+  </section>
+
+  <section>
+    <h2>Decisions</h2>
+
+    <div class="decision rec" data-decision="sequence">
+      <strong>Build order</strong><span class="pill">Recommended</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="seq" value="honesty+A+B-then-C" data-field="sequence" checked> Prompt honesty + A (sibling) + B (terminal adapter) now; C (OCR) stays v3 — covers your actual daily apps without new permissions</label>
+        <label class="opt"><input type="radio" name="seq" value="C-first" data-field="sequence"> C (OCR) first — one universal rung, skip the bespoke adapters entirely</label>
+        <label class="opt"><input type="radio" name="seq" value="B-only" data-field="sequence"> B only — just make cmux/tmux work, revisit the rest later</label>
+        <label class="opt"><input type="radio" name="seq" value="A-only" data-field="sequence"> A + prompt honesty only — cheapest, terminals stay context-free for now</label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="sequence" placeholder='e.g. "agree, but do B before A — I live in cmux"'></textarea>
+    </div>
+
+    <div class="decision" data-decision="ocr_permission">
+      <strong>OCR permission appetite (gates option C, whenever it lands)</strong>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="ocr" value="fine" data-field="ocr_permission"> Fine granting Screen Recording to TangentBar — it's my personal tool</label>
+        <label class="opt"><input type="radio" name="ocr" value="reluctant" data-field="ocr_permission" checked> Acceptable eventually, but exhaust AX/adapter routes first (default)</label>
+        <label class="opt"><input type="radio" name="ocr" value="never" data-field="ocr_permission"> No — keep the app permission-light; drop OCR from the roadmap</label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="ocr_permission" placeholder='e.g. "fine, but only if it degrades gracefully when denied"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="window_size">
+      <strong>Context window size in the prompt</strong><span class="pill">Recommended</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="win" value="keep-400" data-field="window_size" checked> Keep ±400 chars (~65 words/side) — prewarmed qwen streams it in 0.16 s; more disambiguation beats less</label>
+        <label class="opt"><input type="radio" name="win" value="trim-20w" data-field="window_size"> Trim the prompt to ~20 words/side (your number) — tighter focus for the 0.8 b model, less for it to get distracted by</label>
+        <label class="opt"><input type="radio" name="win" value="configurable" data-field="window_size"> Make it a config knob</label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="window_size" placeholder='e.g. "keep 400 but sentence-align the boundaries"'></textarea>
+    </div>
+  </section>
+
+  <section>
+    <h2>Anything else</h2>
+    <textarea data-note="catchall" placeholder="Cross-cutting commentary — ordering vs other roadmap items, the visible-highlight idea, apps I should test next…"></textarea>
+  </section>
+
+  <footer><button onclick="exportJSON()">Export JSON</button></footer>
+  <pre id="out"></pre>
+  <div id="toast">Copied</div>
+
+<script>
+document.addEventListener('click', (e) => {
+  const term = e.target.closest('.term');
+  document.querySelectorAll('.term.open').forEach(t => { if (t !== term) t.classList.remove('open'); });
+  if (term && !e.target.closest('.def')) term.classList.toggle('open');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.term.open').forEach(t => t.classList.remove('open'));
+});
+function exportJSON() {
+  const data = { exportedAt: new Date().toISOString(), decisions:{}, notes:{} };
+  document.querySelectorAll('[data-decision]').forEach(d => {
+    const sel = d.querySelector('[data-field]:checked');
+    data.decisions[d.dataset.decision] = sel ? sel.value : null;
+  });
+  document.querySelectorAll('[data-note]').forEach(t => { data.notes[t.dataset.note] = t.value; });
+  const json = JSON.stringify(data, null, 2);
+  const out = document.getElementById('out');
+  out.textContent = json; out.style.display = 'block'; out.scrollIntoView({behavior:'smooth'});
+  const done = () => { const t = document.getElementById('toast'); t.style.opacity = 1; setTimeout(()=>t.style.opacity=0, 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(json).then(done, () => { console.log(json); alert('Clipboard blocked — JSON shown below and logged.'); });
+  else { console.log(json); alert('Clipboard unavailable — JSON shown below and logged.'); }
+}
+</script>
+</body>
+</html>

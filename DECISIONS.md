@@ -15,6 +15,7 @@ the one follow-up call his notes reopened.
 | D6 | First milestone | **Extraction spike** (`spike/axspike.swift`) | Prove AX text-at-point feasibility against real daily apps before any UI exists. |
 | D7 | Model default | **Discover local models at launch (LM Studio + Ollama); qwen preferred, then gemma; switchable via the status-menu Model submenu** | Josh, 2026-07-03. No hardcoded model id as source of truth — if the configured model isn't served, adopt the best available; `claude -p` remains the fallback only when no local server answers. |
 | D8 | Trigger default (amends D2) | **Double-click defines immediately — no pill in between.** Pill becomes opt-in (`usePill`, menu: "Ask First (pill)") | Josh, 2026-07-03, after first real use: the extra click is friction; the answer is cheap and disposable, so just show it. ⌥ still bypasses the pill when it's enabled. |
+| D9 | Context ladder | **Compose context rungs by fidelity: AX range/value → cross-path merge (`+x`) → kin gathering (`+kin`) → terminal buffer via cmux CLI (`+term`) → honest no-context prompt. OCR deferred to v3.** | Josh's exported review, 2026-07-03 (`context-architecture.html`): sequence=honesty+A+B-then-C, OCR permission "reluctant — exhaust AX/adapter routes first", prompt window stays ±400 chars. Root cause finding: Brave lands `2-selection-only` with context==word on some elements; the model uses context fine when given it. Synthetic selection expansion rejected (visible side effects). |
 
 ## Why D1 became Swift-only
 

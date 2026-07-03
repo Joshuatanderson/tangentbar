@@ -20,8 +20,15 @@ struct Extraction {
     var ladder = "none"
     var word: String?
     var context: String?
+    /// The AX element the text came from — kept for context enrichment.
+    var element: AXUIElement?
 
     var hasText: Bool { word != nil || context != nil }
+    /// Context that adds nothing over the word itself doesn't ground a definition.
+    var hasUsefulContext: Bool {
+        guard let c = context, let w = word else { return context != nil }
+        return c.count > w.count + 40
+    }
 }
 
 enum Extractor {
@@ -95,6 +102,14 @@ enum Extractor {
         // Spike fix: word can be empty while context worked — take word from the
         // other path before falling through to the clipboard rungs.
         if best.word == nil { best.word = byPoint.word ?? bySelection.word }
+        // Cross-merge context: the losing path may have grounded better (Brave:
+        // selection path wins the word with context==word; point path has the text).
+        let altContext = [byPoint.context, bySelection.context].compactMap { $0 }
+            .max(by: { $0.count < $1.count })
+        if let alt = altContext, alt.count > (best.context?.count ?? 0) {
+            best.context = alt
+            best.ladder += "+x"
+        }
 
         if best.word == nil {
             // Rung 3a: copy-on-select apps already wrote the pasteboard.
@@ -115,7 +130,65 @@ enum Extractor {
                 }
             }
         }
+
+        // Context ladder (D-record 2026-07-03): the word rungs above may win a
+        // word with no grounding. Enrich in fidelity order per app class: a
+        // terminal's own buffer is exact (and its AX tree is junk-prone), so
+        // it outranks AX kin text there; everywhere else kin is the rung.
+        if !best.hasUsefulContext, let word = best.word {
+            if let term = TerminalContext.forWord(word, app: best.app) {
+                best.context = term
+                best.ladder += "+term"
+            } else if let el = best.element ?? bySelection.element ?? byPoint.element,
+                      let kin = kinText(around: el), kin.count > (best.context?.count ?? 0) {
+                best.context = window(around: word, in: kin)
+                best.ladder += "+kin"
+            }
+        }
         return best
+    }
+
+    // MARK: Context enrichment
+
+    /// Centered window (±contextRadius) around the last occurrence of `word`.
+    static func window(around word: String, in text: String) -> String {
+        guard let r = text.range(of: word, options: .backwards) else {
+            return String(text.prefix(2 * contextRadius))
+        }
+        let lo = text.index(r.lowerBound, offsetBy: -contextRadius, limitedBy: text.startIndex) ?? text.startIndex
+        let hi = text.index(r.upperBound, offsetBy: contextRadius, limitedBy: text.endIndex) ?? text.endIndex
+        return String(text[lo..<hi])
+    }
+
+    /// Kin gathering: when the hit element's own text is thin (Discord message
+    /// bubbles, web table cells), stitch the text of nearby elements — walk up
+    /// a few ancestors collecting children's values. Bounded: 3 levels, 60
+    /// children per level, 400 chars per piece, 800 total.
+    private static func kinText(around el: AXUIElement, minChars: Int = 120) -> String? {
+        var node = el
+        for _ in 0..<3 {
+            guard let parentObj = attr(node, "AXParent") else { break }
+            let parent = parentObj as! AXUIElement
+            var pieces: [String] = []
+            var total = 0
+            if let children = attr(parent, "AXChildren") as? [AnyObject] {
+                for childObj in children.prefix(60) {
+                    let child = childObj as! AXUIElement
+                    let text = (attr(child, "AXValue") as? String)
+                        ?? (attr(child, "AXTitle") as? String)
+                    guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !t.isEmpty else { continue }
+                    let piece = String(t.prefix(400))
+                    pieces.append(piece)
+                    total += piece.count
+                    if total >= 2 * contextRadius { break }
+                }
+            }
+            let joined = pieces.joined(separator: " ")
+            if joined.count >= minChars { return joined }
+            node = parent
+        }
+        return nil
     }
 
     static func extract(at point: CGPoint, retried: Bool = false) -> Extraction {
@@ -126,6 +199,7 @@ enum Extractor {
         out.appPid = pid
         out.app = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
         out.role = (attr(el, "AXRole") as? String) ?? "?"
+        out.element = el
         if out.role == "AXSecureTextField" { return out }
 
         // Rung 1: char range at point + a context window around it.
@@ -185,6 +259,7 @@ enum Extractor {
         out.appPid = pid
         out.app = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
         out.role = (attr(el, "AXRole") as? String) ?? "?"
+        out.element = el
         if out.role == "AXSecureTextField" { return out }
 
         out.word = attr(el, "AXSelectedText") as? String
