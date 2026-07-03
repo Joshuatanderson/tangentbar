@@ -28,12 +28,13 @@ Rungs: `1` full AX (word+context) · `2` selection-only · `2b` value-only ·
 
 ## Engine work items (from proven rows)
 
-- [ ] **Latency: local-first tangent model.** Measured `claude -p --model haiku` =
-      ~16 s wall (CLI boot + API). Add the Ollama/LM Studio transport
-      (`http://localhost:11434`, `http://localhost:1234/v1`, `gemma-4-e4b`) and
-      default tangents to local; `claude` becomes the quality option.
-- [ ] **True streaming** — `claude -p --output-format stream-json` parsing (plain
-      `-p` flushes mostly at once); local HTTP transports stream natively.
+- [x] **Latency: local-first tangent model.** DONE — LM Studio `qwen3.5-0.8b-mlx`
+      via OpenAI-compatible SSE is the default (`Engine/SSEStream.swift`); measured
+      0.16 s warm vs 7.6 s cold vs ~16 s `claude -p`. Prewarmed at launch +
+      240 s keepalive. `claude -p haiku` is the automatic fallback when local is
+      unreachable, and the quality option later.
+- [ ] **True streaming for the claude fallback** — `--output-format stream-json`
+      parsing (plain `-p` flushes mostly at once); the local SSE path already streams.
 - [ ] **Context gathering for per-message elements** (Discord/Slack): when the hit
       element's text is small, pull sibling/parent `AXStaticText` for grounding.
 - [ ] **Word fallback chain** — selection → range-word → first word of context →

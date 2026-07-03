@@ -15,6 +15,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         config.save()  // materialize defaults on first run
         setupStatusItem()
+        engine.prewarm(config: config)  // near-instant tangents depend on a hot model
 
         if CommandLine.arguments.contains("--selftest") {
             runSelfTest()
@@ -85,12 +86,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         let context = extraction.context ?? word
         panel.setStatus("thinking… (\(extraction.ladder))")
-        engine.streamTangent(word: word, context: context, model: config.tangentModel,
+        engine.streamTangent(word: word, context: context, config: config,
                              onChunk: { [weak self] chunk in
                                  self?.panel.append(chunk)
                              },
                              onDone: { [weak self] status in
-                                 self?.panel.setStatus(status == 0 ? "click outside to dismiss" : "model error (exit \(status))")
+                                 self?.panel.setStatus("\(status) — click outside to dismiss")
                              })
     }
 

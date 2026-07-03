@@ -1,14 +1,15 @@
-// The brain: derives the tangent prompt and streams the answer by shelling
-// out to `claude -p` (v1's primary transport). Local/remote HTTP providers
-// join later behind the same interface.
+// The brain: derives the tangent prompt and streams the answer.
 //
-// v0 note: plain `claude -p` output arrives mostly in one flush; true
-// incremental streaming (`--output-format stream-json`) is a checklist item.
+// Default transport: the local LM Studio server (OpenAI-compatible SSE) with a
+// small qwen — measured 0.16 s warm vs ~16 s for `claude -p`, hence prewarming
+// at launch + keepalive. `claude -p` is the fallback when local is unreachable.
 
 import Foundation
 
 final class Engine {
     private var process: Process?
+    private var sse: SSEStream?
+    private var keepAliveTimer: Timer?
 
     /// Mirrors v1 tangent.rs: a short, constant dictionary framing; the
     /// grounding context is a snapshot, isolated from any main conversation.
@@ -23,14 +24,71 @@ final class Engine {
         """
     }
 
-    func streamTangent(word: String, context: String, model: String,
+    // MARK: Prewarm
+
+    /// Load the local model now and keep it hot. Near-instant tangents depend
+    /// on this: cold JIT load measured at ~7.6 s, warm at ~0.16 s.
+    func prewarm(config: Config) {
+        guard config.provider == "lmstudio" else { return }
+        ping(config: config)
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 240, repeats: true) { [weak self] _ in
+            self?.ping(config: config)
+        }
+    }
+
+    private func ping(config: Config) {
+        guard let url = URL(string: config.localBaseURL + "/chat/completions") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": config.tangentModel,
+            "messages": [["role": "user", "content": "hi"]],
+            "max_tokens": 1, "stream": false,
+        ])
+        URLSession.shared.dataTask(with: request).resume()
+    }
+
+    // MARK: Streaming
+
+    func streamTangent(word: String, context: String, config: Config,
                        onChunk: @escaping (String) -> Void,
-                       onDone: @escaping (Int32) -> Void) {
+                       onDone: @escaping (String) -> Void) {
         cancel()
+        let prompt = Engine.tangentPrompt(word: word, context: context)
+        guard config.provider == "lmstudio",
+              let url = URL(string: config.localBaseURL + "/chat/completions") else {
+            streamViaClaude(prompt: prompt, model: config.claudeModel, onChunk: onChunk, onDone: onDone)
+            return
+        }
+        let stream = SSEStream(onChunk: onChunk) { [weak self] ok, receivedAny in
+            if ok && receivedAny {
+                onDone("done · \(config.tangentModel)")
+            } else if !receivedAny {
+                // Local server down or empty — fall back to claude.
+                onChunk("")
+                self?.streamViaClaude(prompt: prompt, model: config.claudeModel,
+                                      onChunk: onChunk, onDone: onDone)
+            } else {
+                onDone("stream interrupted")
+            }
+        }
+        stream.start(url: url, body: [
+            "model": config.tangentModel,
+            "messages": [["role": "user", "content": prompt]],
+            "max_tokens": 300,
+            "stream": true,
+        ])
+        sse = stream
+    }
+
+    private func streamViaClaude(prompt: String, model: String,
+                                 onChunk: @escaping (String) -> Void,
+                                 onDone: @escaping (String) -> Void) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["claude", "-p", Engine.tangentPrompt(word: word, context: context),
-                             "--model", model]
+        process.arguments = ["claude", "-p", prompt, "--model", model]
         let stdout = Pipe()
         process.standardOutput = stdout
         process.standardError = Pipe()
@@ -42,20 +100,25 @@ final class Engine {
         }
         process.terminationHandler = { p in
             stdout.fileHandleForReading.readabilityHandler = nil
-            DispatchQueue.main.async { onDone(p.terminationStatus) }
+            let status = p.terminationStatus
+            DispatchQueue.main.async {
+                onDone(status == 0 ? "done · \(model) (fallback)" : "model error (exit \(status))")
+            }
         }
         do {
             try process.run()
             self.process = process
         } catch {
             DispatchQueue.main.async {
-                onChunk("[error] could not launch `claude`: \(error.localizedDescription)")
-                onDone(-1)
+                onChunk("[error] no local model and could not launch `claude`: \(error.localizedDescription)")
+                onDone("transport error")
             }
         }
     }
 
     func cancel() {
+        sse?.cancel()
+        sse = nil
         process?.terminate()
         process = nil
     }

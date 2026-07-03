@@ -5,8 +5,15 @@ import Foundation
 
 struct Config: Codable {
     var enabled = true
-    /// Model answering tangents — cheap and fast by default (v1's resolve_model lesson).
-    var tangentModel = "haiku"
+    /// Transport for tangents: "lmstudio" (local, prewarmed, ~0.16 s warm) with
+    /// `claude -p` as automatic fallback when the local server is unreachable.
+    var provider = "lmstudio"
+    var localBaseURL = "http://localhost:1234/v1"
+    /// Model answering tangents — small local qwen by default (v1's
+    /// resolve_model lesson, taken further: cheap AND instant).
+    var tangentModel = "qwen3.5-0.8b-mlx"
+    /// Model used when falling back to the claude CLI.
+    var claudeModel = "haiku"
     /// Seconds the pill affordance lingers after a double-click.
     var pillTimeout = 1.6
     /// Allow the ⌘C-synthesis rung (rung 3b) where AX has no text.
