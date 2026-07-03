@@ -89,13 +89,19 @@ enum Extractor {
     /// pasteboard changeCount snapshotted in the tap callback (rung 3a).
     /// Call off the main thread; AX calls can stall.
     static func forDoubleClick(at point: CGPoint, pbCountAtClick: Int, allowClipboard: Bool) -> Extraction {
-        let byPoint = extract(at: point)
+        var byPoint = extract(at: point)
         // Own windows never trigger.
         if byPoint.appPid == ProcessInfo.processInfo.processIdentifier { return Extraction() }
         if byPoint.role == "AXSecureTextField" { return Extraction() }
 
-        let bySelection = extractFocused()
+        var bySelection = extractFocused()
         if bySelection.role == "AXSecureTextField" { return Extraction() }
+
+        // Chromium's AXSelectedText can be pure U+FFFC (object replacement) —
+        // a garbage "word" that would otherwise win the ladder. Clean both
+        // paths first so junk selections fall through to the clipboard rungs.
+        byPoint.word = cleanWord(byPoint.word)
+        bySelection.word = cleanWord(bySelection.word)
 
         // Prefer the click's own selection; it reaches web areas point lookup misses.
         var best = bySelection.word != nil ? bySelection : byPoint
@@ -118,14 +124,14 @@ enum Extractor {
                let s = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
                !s.isEmpty, s.count < 2000 {
                 best.ladder = "3a-copy-on-select"
-                best.word = s.count <= 80 ? s : nil
+                best.word = s.count <= 80 ? cleanWord(s) : nil
                 best.context = best.context ?? s
             } else if allowClipboard, byPoint.appPid != 0 {
                 // Rung 3b: the click selected something only the app can copy.
                 if let copied = clipboardRescue(pid: byPoint.appPid)?
                     .trimmingCharacters(in: .whitespacesAndNewlines), !copied.isEmpty {
                     best.ladder = "3b-clipboard-synth"
-                    best.word = copied.count <= 80 ? copied : nil
+                    best.word = copied.count <= 80 ? cleanWord(copied) : nil
                     best.context = best.context ?? copied
                 }
             }
@@ -145,7 +151,22 @@ enum Extractor {
                 best.ladder += "+kin"
             }
         }
+        // Object-replacement chars pepper Chromium AX text (inline images etc).
+        best.context = best.context?.replacingOccurrences(of: "\u{FFFC}", with: " ")
         return best
+    }
+
+    /// A usable word has at least one letter or digit once invisible junk
+    /// (U+FFFC object replacement, zero-width space) is stripped.
+    private static func cleanWord(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let cleaned = raw
+            .replacingOccurrences(of: "\u{FFFC}", with: "")
+            .replacingOccurrences(of: "\u{200B}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty,
+              cleaned.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        return cleaned
     }
 
     // MARK: Context enrichment
