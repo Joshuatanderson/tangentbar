@@ -39,8 +39,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setupStatusItem()
-        // Look for local models first; prewarm follows once we know which
-        // model actually exists (qwen > gemma > whatever the servers offer).
+        // Prewarm the saved model NOW — every ms counts against a ~7.6 s cold
+        // JIT load. Discovery refines afterwards and re-prewarms on change.
+        engine.prewarm(config: config)
         refreshLocalModels(autoSelect: true)
 
         if CommandLine.arguments.contains("--selftest") {
@@ -196,6 +197,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ModelDiscovery.discover(including: config.localBaseURL) { [weak self] models in
             guard let self else { return }
             self.localModels = models
+            let before = (self.config.tangentModel, self.config.localBaseURL)
             if let current = models.first(where: { $0.id == self.config.tangentModel }) {
                 // Model still served — track its base URL in case it moved servers.
                 if self.config.localBaseURL != current.baseURL {
@@ -208,7 +210,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.config.save()
             }
             self.rebuildModelMenu()
-            if autoSelect {
+            // Launch already prewarmed the saved model; only re-warm on change.
+            if autoSelect, (self.config.tangentModel, self.config.localBaseURL) != before {
                 self.engine.prewarm(config: self.config)
             }
         }

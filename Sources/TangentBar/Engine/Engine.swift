@@ -59,6 +59,10 @@ final class Engine {
             "model": config.tangentModel,
             "messages": [["role": "user", "content": "hi"]],
             "max_tokens": 1, "stream": false,
+            // LM Studio: keep the JIT model loaded 2 h past the last request,
+            // so app relaunches within that window skip the ~7.6 s cold load.
+            // Ollama ignores the field (verified).
+            "ttl": 7200,
         ])
         URLSession.shared.dataTask(with: request).resume()
     }
@@ -96,6 +100,7 @@ final class Engine {
             "messages": [["role": "user", "content": prompt]],
             "max_tokens": 300,
             "stream": true,
+            "ttl": 7200,
         ])
         sse = stream
     }
