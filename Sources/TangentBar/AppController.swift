@@ -26,6 +26,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             runTangentProbe(word: CommandLine.arguments[i + 1])
             return
         }
+        if let i = CommandLine.arguments.firstIndex(of: "--termctx"),
+           CommandLine.arguments.count > i + 1 {
+            // Exercise the terminal context rung exactly as a cmux click would.
+            let word = CommandLine.arguments[i + 1]
+            if let ctx = TerminalContext.forWord(word, app: "cmux") {
+                print("context (\(ctx.count) chars):\n…\(ctx.suffix(300))")
+            } else {
+                print("no terminal context for \"\(word)\"")
+            }
+            exit(0)
+        }
 
         setupStatusItem()
         // Look for local models first; prewarm follows once we know which
