@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- ring + tangent line, touching at one point; inherit `currentColor` -->
+  <g stroke="currentColor" stroke-width="2.8" stroke-linecap="round">
+    <circle cx="25.4" cy="36.8" r="16.2"/>
+    <line x1="13.5" y1="9.4" x2="55.2" y2="36.9"/>
+  </g>
+</svg>

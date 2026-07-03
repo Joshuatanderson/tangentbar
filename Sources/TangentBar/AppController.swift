@@ -59,12 +59,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let prompt = "AXTrustedCheckOptionPrompt" as CFString
         let trusted = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
         if !trusted {
-            setStatusTitle("⌁!")
+            setStatusBadge("!")
             // Poll until granted, then arm. (Real onboarding flow replaces this.)
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
                 guard AXIsProcessTrusted() else { return }
                 timer.invalidate()
-                self?.setStatusTitle("⌁")
+                self?.setStatusBadge("")
                 self?.armTap()
             }
         }
@@ -76,7 +76,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.handleDoubleClick(at: location, alt: alt, pbCountAtClick: pbCount)
         }
         if !eventTap.start() {
-            setStatusTitle("⌁!")
+            setStatusBadge("!")
         }
     }
 
@@ -138,7 +138,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "⌁"
+        item.button?.image = StatusIcon.make()
         let menu = NSMenu()
 
         let toggle = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled(_:)), keyEquivalent: "")
@@ -169,8 +169,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
     }
 
-    private func setStatusTitle(_ s: String) {
+    /// Text badge next to the logo — "!" while a permission/tap problem stands.
+    private func setStatusBadge(_ s: String) {
         statusItem?.button?.title = s
+        statusItem?.button?.imagePosition = s.isEmpty ? .imageOnly : .imageLeft
     }
 
     func menuWillOpen(_ menu: NSMenu) {
