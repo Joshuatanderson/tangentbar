@@ -4,7 +4,7 @@
 
 import AppKit
 
-final class Pill {
+final class Pill: NSObject {
     private var panel: NSPanel?
     private var timer: Timer?
     private var onClick: (() -> Void)?
@@ -18,8 +18,9 @@ final class Pill {
         dismiss()
         self.onClick = onClick
 
+        // Read as a button, not as output: "define" is the affordance.
         let label = word.count > 24 ? String(word.prefix(24)) + "…" : word
-        let field = NSTextField(labelWithString: "⌁ \(label)")
+        let field = NSTextField(labelWithString: "⌁ define “\(label)”")
         field.font = NSFont(name: "Iowan Old Style", size: 12) ?? .systemFont(ofSize: 12, weight: .medium)
         field.textColor = Pill.ink
         field.sizeToFit()
@@ -55,11 +56,13 @@ final class Pill {
         self.panel = panel
 
         timer = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
+            NSLog("pill timed out unclicked")
             self?.dismiss()
         }
     }
 
     @objc private func clicked() {
+        NSLog("pill clicked")
         let action = onClick
         dismiss()
         action?()

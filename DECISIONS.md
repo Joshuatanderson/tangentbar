@@ -13,6 +13,8 @@ the one follow-up call his notes reopened.
 | D4 | Popup + chat rendering | **Native NSTextView / AttributedString** | Speed first; we're Mac-native anyway. Investigate how AppKit maps markdown hierarchy (headings arrive as `PresentationIntent`s that must be mapped to fonts manually). |
 | D5 | Core reuse | **Fresh rewrite, in this repo (`tangent-2`), lessons from v1 carried as spec** | v1 stays frozen as reference. Language: see D1 — Swift. |
 | D6 | First milestone | **Extraction spike** (`spike/axspike.swift`) | Prove AX text-at-point feasibility against real daily apps before any UI exists. |
+| D7 | Model default | **Discover local models at launch (LM Studio + Ollama); qwen preferred, then gemma; switchable via the status-menu Model submenu** | Josh, 2026-07-03. No hardcoded model id as source of truth — if the configured model isn't served, adopt the best available; `claude -p` remains the fallback only when no local server answers. |
+| D8 | Trigger default (amends D2) | **Double-click defines immediately — no pill in between.** Pill becomes opt-in (`usePill`, menu: "Ask First (pill)") | Josh, 2026-07-03, after first real use: the extra click is friction; the answer is cheap and disposable, so just show it. ⌥ still bypasses the pill when it's enabled. |
 
 ## Why D1 became Swift-only
 

@@ -10,6 +10,7 @@ final class Engine {
     private var process: Process?
     private var sse: SSEStream?
     private var keepAliveTimer: Timer?
+    private var cancelled = false
 
     /// Mirrors v1 tangent.rs: a short, constant dictionary framing; the
     /// grounding context is a snapshot, isolated from any main conversation.
@@ -56,6 +57,7 @@ final class Engine {
                        onChunk: @escaping (String) -> Void,
                        onDone: @escaping (String) -> Void) {
         cancel()
+        cancelled = false  // cancel() above was housekeeping, not a user dismissal
         let prompt = Engine.tangentPrompt(word: word, context: context)
         guard config.provider == "lmstudio",
               let url = URL(string: config.localBaseURL + "/chat/completions") else {
@@ -66,10 +68,13 @@ final class Engine {
             if ok && receivedAny {
                 onDone("done · \(config.tangentModel)")
             } else if !receivedAny {
+                // A user dismissal also lands here (cancel kills the stream
+                // before data) — don't burn a claude call on a closed panel.
+                guard let self, !self.cancelled else { return }
                 // Local server down or empty — fall back to claude.
                 onChunk("")
-                self?.streamViaClaude(prompt: prompt, model: config.claudeModel,
-                                      onChunk: onChunk, onDone: onDone)
+                self.streamViaClaude(prompt: prompt, model: config.claudeModel,
+                                     onChunk: onChunk, onDone: onDone)
             } else {
                 onDone("stream interrupted")
             }
@@ -117,6 +122,7 @@ final class Engine {
     }
 
     func cancel() {
+        cancelled = true
         sse?.cancel()
         sse = nil
         process?.terminate()

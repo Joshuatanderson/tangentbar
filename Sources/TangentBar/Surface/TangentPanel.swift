@@ -31,16 +31,16 @@ final class TangentPanel {
         caption.font = .systemFont(ofSize: 10.5)
         caption.textColor = NSColor(srgbRed: 0.43, green: 0.45, blue: 0.50, alpha: 1)
 
-        let text = NSTextView()
+        // scrollableTextView() wires the text system correctly — a bare
+        // NSTextView() in a scroll view stays zero-sized and renders nothing.
+        let scroll = NSTextView.scrollableTextView()
+        let text = scroll.documentView as! NSTextView
         text.isEditable = false
         text.isSelectable = true
         text.drawsBackground = false
         text.font = NSFont(name: "Charter", size: 13.5) ?? .systemFont(ofSize: 13.5)
         text.textColor = Pill.ink
         text.textContainerInset = NSSize(width: 0, height: 4)
-
-        let scroll = NSScrollView()
-        scroll.documentView = text
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         scroll.autohidesScrollers = true
