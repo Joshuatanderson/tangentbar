@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tangent v2 — system-wide architecture</title>
+<style>
+  /* Tokens carried over from tangent v1 (src/ui/theme.rs INK_CSS). */
+  :root {
+    --bg:          #f2ecdf;   /* warm paper */
+    --surface:     #faf6ec;   /* raised paper card */
+    --surface-2:   #e8e0cd;   /* pressed / hover paper */
+    --border:      #d5cab2;
+    --text:        #1d2433;   /* iron-gall ink */
+    --muted:       #6e7280;
+    --ink:         #232c45;
+    --accent:      #3a4d8f;   /* indigo ink — primary action */
+    --accent-2:    #7c5bb0;   /* violet — assumption / judgment call */
+    --accent-soft: rgba(58, 77, 143, 0.16);
+    --ok:          #2f7a58;   /* recommendation / positive */
+    --caution:     #9a6b14;   /* non-blocking concern */
+    --bad:         #a63d2a;   /* blocker / negative */
+    --radius:      18px;
+    --radius-sm:   10px;
+    --font-display: "Iowan Old Style", "Palatino", "Book Antiqua", Georgia, serif;
+    --font-body:    "Charter", "Iowan Old Style", "Palatino", Georgia, serif;
+    --font-mono:    "SF Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 960px; padding: 40px 32px 80px; background: var(--bg);
+         color: var(--text); font: 15.5px/1.6 var(--font-body); -webkit-font-smoothing: antialiased; }
+  h1 { font-family: var(--font-display); font-size: 30px; margin: 0 0 6px; color: var(--ink); }
+  h2 { font-family: var(--font-display); font-size: 19px; margin: 0 0 12px; color: var(--ink); }
+  h3 { font-size: 15px; margin: 18px 0 8px; color: var(--ink); }
+  .sub { color: var(--muted); margin-bottom: 30px; font-size: 16px; }
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 22px 24px; margin-bottom: 20px; }
+  code, pre { font-family: var(--font-mono); font-size: 13px; }
+  code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+  pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+        padding: 12px 14px; overflow-x: auto; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+  ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 4px 0; }
+
+  /* Callouts */
+  .callout { border-left: 4px solid var(--accent-2); background: rgba(124,91,176,.08);
+             padding: 12px 16px; border-radius: var(--radius-sm); margin: 14px 0; }
+  .callout.arch    { border-color: var(--accent);  background: var(--accent-soft); }
+  .callout.caution { border-color: var(--caution); background: rgba(154,107,20,.09); }
+  .callout.blocker { border-color: var(--bad);     background: rgba(166,61,42,.08); }
+  .callout b:first-child { display: block; margin-bottom: 3px; font-size: 13px; text-transform: uppercase;
+                           letter-spacing: .04em; }
+  .callout.arch    b:first-child { color: var(--accent); }
+  .callout.caution b:first-child { color: var(--caution); }
+  .callout.blocker b:first-child { color: var(--bad); }
+  .callout:not(.arch):not(.caution):not(.blocker) b:first-child { color: var(--accent-2); }
+
+  /* Explain-on-demand terms */
+  .term { position: relative; border-bottom: 1px dashed var(--accent-2); cursor: pointer; }
+  .term:hover, .term.open { color: var(--accent-2); border-bottom-style: solid; }
+  .term > .def { display: none; position: absolute; left: 0; top: calc(100% + 8px); z-index: 20;
+                 width: max-content; max-width: min(340px, 70vw); background: var(--surface);
+                 border: 1px solid var(--accent-2); border-radius: var(--radius-sm); padding: 10px 12px;
+                 font-size: 13.5px; line-height: 1.5; color: var(--text); white-space: normal;
+                 box-shadow: 0 8px 28px rgba(35,44,69,.22); cursor: auto; }
+  .term.open > .def { display: block; }
+  .term > .def b { color: var(--accent-2); }
+
+  /* Layer diagram */
+  .layers { display: flex; flex-direction: column; gap: 0; margin: 16px 0; }
+  .layer { display: grid; grid-template-columns: 150px 1fr 190px; gap: 14px; align-items: center;
+           border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px;
+           background: var(--bg); }
+  .layer .lname { font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 14px; }
+  .layer .lname small { display: block; font-family: var(--font-body); font-weight: 400; color: var(--muted); font-size: 12px; }
+  .layer .lchips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-family: var(--font-mono); font-size: 11.5px; background: var(--surface-2);
+          border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; color: var(--ink); }
+  .chip.swift { border-color: var(--accent);  color: var(--accent); background: var(--accent-soft); }
+  .chip.rust  { border-color: var(--bad);     color: var(--bad);    background: rgba(166,61,42,.07); }
+  .layer .lang { font-size: 12px; color: var(--muted); text-align: right; }
+  .flow-arrow { text-align: center; color: var(--muted); font-size: 13px; padding: 3px 0; }
+  .boundary { border: 2px dashed var(--accent); border-radius: var(--radius-sm); padding: 10px;
+              position: relative; margin-top: 10px; }
+  .boundary > .blabel { position: absolute; top: -11px; left: 16px; background: var(--surface);
+                        padding: 0 8px; font-size: 12px; color: var(--accent); font-weight: 600; }
+
+  /* Step flows */
+  .steps { counter-reset: step; display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+  .step { display: grid; grid-template-columns: 30px 160px 1fr; gap: 12px; align-items: baseline; }
+  .step::before { counter-increment: step; content: counter(step); width: 24px; height: 24px;
+                  display: inline-flex; align-items: center; justify-content: center;
+                  background: var(--ink); color: var(--surface); border-radius: 50%;
+                  font-size: 12px; font-weight: 700; align-self: start; }
+  .step .actor { font-family: var(--font-mono); font-size: 12px; color: var(--accent); padding-top: 3px; }
+  .step .what { }
+  .step .what small { color: var(--muted); display: block; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  th { text-align: left; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--muted); border-bottom: 2px solid var(--border); padding: 6px 10px; }
+  td { border-bottom: 1px solid var(--border); padding: 8px 10px; vertical-align: top; }
+  .good  { color: var(--ok); font-weight: 700; }
+  .meh   { color: var(--caution); font-weight: 700; }
+  .poor  { color: var(--bad); font-weight: 700; }
+
+  /* Decisions */
+  .decision { border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 16px;
+              margin: 16px 0; background: var(--bg); }
+  .decision.rec { border-color: var(--ok); }
+  .pill { display: inline-block; font-size: 12px; color: var(--ok); border: 1px solid var(--ok);
+          border-radius: 999px; padding: 1px 9px; margin-left: 8px; vertical-align: 2px; }
+  .opts { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+  label.opt { cursor: pointer; display: grid; grid-template-columns: 20px 1fr; gap: 10px;
+              padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+              background: var(--surface); }
+  label.opt:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.opt b { color: var(--ink); }
+  label.opt small { color: var(--muted); display: block; margin-top: 2px; }
+  input[type=radio] { accent-color: var(--accent); margin-top: 3px; }
+  textarea { width: 100%; min-height: 52px; background: var(--surface); color: var(--text);
+             border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+             font: 14px/1.5 var(--font-body); resize: vertical; }
+  textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .note-label { color: var(--muted); font-size: 13px; margin: 10px 0 4px; }
+
+  footer { position: sticky; bottom: 0; padding: 14px 0; background: linear-gradient(transparent, var(--bg) 35%); }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: var(--radius-sm);
+           padding: 11px 20px; font: 600 15px var(--font-body); cursor: pointer; }
+  button:hover { background: var(--ink); }
+  pre#out { display: none; white-space: pre-wrap; }
+  #toast { position: fixed; right: 24px; bottom: 24px; background: var(--ok); color: #fff;
+           padding: 9px 16px; border-radius: var(--radius-sm); opacity: 0; transition: opacity .2s;
+           pointer-events: none; }
+</style>
+</head>
+<body>
+
+<h1>Tangent v2 — the OS-level tangent layer</h1>
+<div class="sub">Architecture for the new app: a macOS menu-bar agent that lets you double-click a word in <em>any</em> application to open a grounded definition tangent, and grab any selection into a fresh chat. v1 stays untouched as the reference implementation.</div>
+
+<!-- ============================================================ -->
+<section>
+  <h2>What v1 already settled — and what v2 replaces</h2>
+  <p>v1 proved the interaction grammar, and its core was deliberately built UI-agnostic. That means v2 is <em>not</em> a rewrite of the whole app — it's a new <strong>sensing</strong> layer (where do events come from) and a new <strong>surfacing</strong> layer (where do results appear) around a brain that already exists.</p>
+  <table>
+    <tr><th>v1 concept</th><th>v1 implementation</th><th>v2 translation</th></tr>
+    <tr>
+      <td><strong>Tangent</strong> — double-click a word → disposable side-chat grounded in a snapshot of surrounding text, answered by a cheap/fast model</td>
+      <td><code>tangent.rs</code> + <code>TangentPanel</code>, in-window</td>
+      <td>Double-click in <em>any app</em> → floating popup at the cursor. Same domain type, same context-snapshot isolation.</td>
+    </tr>
+    <tr>
+      <td><strong>Explore / zoom</strong> — drag-select → nested conversation seeded with the excerpt, breadcrumb trail, keep-all arena</td>
+      <td><code>explore.rs</code> + <code>ZoomView</code>, in-window</td>
+      <td>Grab a selection from <em>any app</em> → new chat window seeded with the excerpt. The arena's <code>parent</code> pointer now records <em>which app / document</em> it came from instead of the main chat.</td>
+    </tr>
+    <tr>
+      <td><strong>Transports</strong> — <code>claude -p</code>, Ollama, LM Studio, remote HTTPS providers; streamed <code>Chunk</code>s</td>
+      <td><code>claude.rs</code>, <code>local_chat.rs</code>, <code>remote.rs</code>, <code>backend.rs</code></td>
+      <td>Reused as-is. This is the most valuable code in v1.</td>
+    </tr>
+    <tr>
+      <td><strong>Persistence &amp; keys</strong> — history in app-support dir, API keys in Keychain</td>
+      <td><code>history.rs</code>, <code>persist.rs</code>, <code>keyring</code></td>
+      <td>Reused as-is.</td>
+    </tr>
+    <tr>
+      <td><strong>Model resolution</strong> — explicit pick → Haiku fallback → prompt user</td>
+      <td><code>tangent::resolve_model</code></td>
+      <td>Reused; the popup's speed budget makes the cheap-model default even more important.</td>
+    </tr>
+  </table>
+  <div class="callout"><b>Assumption</b>macOS-only is accepted as a v2 premise (you said so). Worth being explicit about the cost: v1 was cross-platform by construction; v2's entire value proposition rests on the macOS <span class="term">Accessibility API<span class="def"><b>Accessibility API (AX)</b> — the macOS tree of UI elements (<code>AXUIElement</code>) that every well-behaved app exposes so screen readers can inspect it. It's also the only sanctioned way for one app to <em>read text out of another app</em> — which is exactly what v2 needs.</span></span>. A Windows port later would be a parallel sensing/surfacing layer over UIA, not a code share.</div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2>The v2 shape — four layers, one boundary</h2>
+  <p>Everything the new app does decomposes into four layers. The dashed box marks the recommended process boundary (Decision 1): the platform-glue layers live in a small native shell; the brain is the v1 Rust core running as a <span class="term">sidecar<span class="def"><b>Sidecar</b> — a separate helper process the main app spawns and owns, talking to it over a pipe. Cheaper and looser than linking a library: each side keeps its own language, runtime, and crash domain.</span></span> process.</p>
+
+  <div class="boundary">
+    <span class="blabel">TangentBar.app — native shell (menu-bar agent, no Dock icon)</span>
+    <div class="layers">
+      <div class="layer">
+        <div class="lname">1 · Sensor<small>global input events</small></div>
+        <div class="lchips">
+          <span class="chip swift">CGEventTap (mouse)</span>
+          <span class="chip swift">RegisterEventHotKey</span>
+          <span class="chip swift">double-click + modifier filter</span>
+          <span class="chip swift">self-exclusion</span>
+        </div>
+        <div class="lang">who clicked, where, in which app</div>
+      </div>
+      <div class="flow-arrow">↓ click point / hotkey event</div>
+      <div class="layer">
+        <div class="lname">2 · Extraction<small>text acquisition</small></div>
+        <div class="lchips">
+          <span class="chip swift">AXUIElementCopyElementAtPosition</span>
+          <span class="chip swift">word + ±context via parameterized AX</span>
+          <span class="chip swift">selected-text read</span>
+          <span class="chip swift">clipboard fallback (⌘C synth)</span>
+        </div>
+        <div class="lang">word · excerpt · context · source app</div>
+      </div>
+      <div class="flow-arrow">↓ TangentRequest / GrabRequest</div>
+      <div class="layer">
+        <div class="lname">3 · Surface<small>where results appear</small></div>
+        <div class="lchips">
+          <span class="chip swift">NSStatusItem menu</span>
+          <span class="chip swift">non-activating NSPanel popup</span>
+          <span class="chip swift">chat windows (WKWebView)</span>
+          <span class="chip swift">Settings</span>
+        </div>
+        <div class="lang">popup at cursor · promoted chats</div>
+      </div>
+    </div>
+  </div>
+  <div class="flow-arrow">↕ JSON-lines over stdio (requests down, streamed chunks up)</div>
+  <div class="boundary" style="border-color: var(--bad);">
+    <span class="blabel" style="color: var(--bad);">tangentd — the brain (v1 Rust core, headless daemon)</span>
+    <div class="layers">
+      <div class="layer">
+        <div class="lname">4 · Brain<small>models, memory</small></div>
+        <div class="lchips">
+          <span class="chip rust">model.rs / resolve_model</span>
+          <span class="chip rust">tangent.rs / explore.rs</span>
+          <span class="chip rust">claude -p · Ollama · LM Studio · remote</span>
+          <span class="chip rust">history + persist + keyring</span>
+        </div>
+        <div class="lang">streams Chunks, owns all state</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout arch"><b>Architectural choice — the popup is a non-activating panel, not a context menu</b>What you described ("the window you get when you right-click") is technically an <code>NSMenu</code>, but menus can't host streaming text or an input field. The right primitive is a <span class="term">non-activating NSPanel<span class="def"><b>Non-activating NSPanel</b> — a floating window with the <code>.nonactivatingPanel</code> style: it appears above everything (level <code>.popUpMenu</code>) and accepts clicks <em>without taking focus away from the app you're reading</em>. Spotlight and the Look Up popover are built this way.</span></span> anchored at the mouse point. Critical property: focus never leaves the app you double-clicked in — you keep reading, the tangent floats. Esc or click-away dismisses; a small "open as chat ↗" affordance promotes it to a real window.</div>
+  <div class="callout arch"><b>Architectural choice — Swift owns senses &amp; surfaces, Rust owns thinking &amp; memory</b>The event tap, AX reads, TCC prompts, and panel behavior are the flakiest, most platform-idiomatic 10% of the app — first-class and heavily documented in Swift, rough and thinly-wrapped in Rust crates. Meanwhile the transports/history/keys are the most valuable code you have, and they're Rust. The split puts each half where it's strong. Decision 1 lets you overrule this.</div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2>Event flow A — the system-wide tangent (double-click)</h2>
+  <div class="steps">
+    <div class="step"><span class="actor">Sensor</span><div class="what">⌥-double-click fires in Safari (trigger per Decision 2). The <span class="term">CGEventTap<span class="def"><b>CGEventTap</b> — a low-level hook on the system event stream. A listen-only tap sees every mouse event OS-wide before/as apps get them; a mouse-only tap needs the Accessibility permission (keyboard taps additionally need Input Monitoring — v2 avoids those by using the Carbon hotkey API instead).</span></span> sees <code>leftMouseUp</code> with <code>clickCount == 2</code> + ⌥ held. Events inside Tangent's own windows are ignored.</div></div>
+    <div class="step"><span class="actor">Extraction</span><div class="what"><code>AXUIElementCopyElementAtPosition(point)</code> → the text element under the cursor. Read the double-click-selected word (<code>kAXSelectedTextAttribute</code>) and pull ~2 sentences each side via <span class="term">parameterized AX attributes<span class="def"><b>Parameterized AX attributes</b> — AX getters that take an argument, e.g. <code>kAXRangeForPositionParameterizedAttribute</code> (character range at a screen point) and <code>kAXStringForRangeParameterizedAttribute</code> (the text in a range). Together they let you read "the word here, plus N characters around it" from another app.</span></div><small>Fallback ladder below if the app's AX support is poor.</small></div></div>
+    <div class="step"><span class="actor">Surface</span><div class="what">Popup panel appears at the cursor <em>immediately</em> (&lt;100&nbsp;ms budget) showing the word + a typing indicator. Focus stays in Safari.</div></div>
+    <div class="step"><span class="actor">Brain</span><div class="what">Shell writes <code>{"op":"tangent","word":…,"context":…,"source_app":"Safari"}</code> to <code>tangentd</code>; the daemon runs <code>resolve_model</code> (explicit pick → Haiku → local) and streams chunks back; the panel renders them as they arrive.</div></div>
+    <div class="step"><span class="actor">Surface</span><div class="what">Esc / click-away → panel closes, tangent dropped (v1 semantics: disposable). Typing a follow-up keeps it alive; "open as chat ↗" promotes it to a full window and hands the history to the explore arena.</div></div>
+  </div>
+
+  <h2 style="margin-top:26px;">Event flow B — grab a selection into a chat</h2>
+  <div class="steps">
+    <div class="step"><span class="actor">Sensor</span><div class="what">You've drag-selected a paragraph anywhere. Trigger fires (hotkey vs. pill — Decision 3).</div></div>
+    <div class="step"><span class="actor">Extraction</span><div class="what">Read the focused app's focused element (<code>kAXFocusedUIElementAttribute</code>) → <code>kAXSelectedTextAttribute</code>, plus surrounding context via the range attributes. Record source app + window title as provenance.</div></div>
+    <div class="step"><span class="actor">Surface + Brain</span><div class="what">New chat window opens seeded with the excerpt — exactly a v1 explore <code>Node</code> with <code>parent: None</code>, <code>title</code> = snippet, <code>context</code> = selection + margins. It waits for your first message (v1's manual-send semantics), full model picker available.</div></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2>Extraction reality check — AX support by app class</h2>
+  <p>This layer is where the dream meets the OS. Quality varies by how the target app draws text; the design must treat "word + rich context" as the best case, not the guarantee.</p>
+  <table>
+    <tr><th>Target</th><th>AX quality</th><th>Notes</th></tr>
+    <tr><td>Native Cocoa text (Notes, Mail, Xcode, TextEdit)</td><td class="good">Full</td><td>Word + arbitrary context ranges via parameterized attributes.</td></tr>
+    <tr><td>Safari / Chrome / web views</td><td class="good">Good</td><td><code>AXWebArea</code> exposes text; context ranges usually work per text node (context may clip at element boundaries).</td></tr>
+    <tr><td>Electron / Chromium apps (Slack, VS Code, Discord)</td><td class="meh">Lazy</td><td>AX tree is disabled until requested — set the app's <code>AXManualAccessibility</code> attribute to <code>true</code> first, then read. Works, adds a first-hit delay.</td></tr>
+    <tr><td>PDF in Preview</td><td class="good">Good</td><td>Text layer exposed when the PDF has one (not scanned images).</td></tr>
+    <tr><td>Terminals</td><td class="meh">Varies</td><td>Terminal.app decent; kitty/Alacritty/WezTerm expose little or nothing → clipboard fallback.</td></tr>
+    <tr><td>Password / secure fields</td><td class="poor">Blocked</td><td>By design. <span class="term">Secure input<span class="def"><b>Secure input</b> — a mode a password field switches on that blocks other processes from observing keystrokes and reading the field's content. AX intentionally returns nothing; treat it as a hard no-op, never fall back to clipboard here.</span></span> must be detected and the trigger silently suppressed.</td></tr>
+    <tr><td>Custom GPU-drawn canvases (games, some design tools, image-only PDFs)</td><td class="poor">None</td><td>No text to read. Out of scope for v2 (OCR-at-point is a plausible v3: <code>ScreenCaptureKit</code> + Vision framework).</td></tr>
+  </table>
+  <h3>The fallback ladder (per trigger, in order)</h3>
+  <ul>
+    <li><strong>1. Full AX</strong> — word + ±context via range attributes. The good path.</li>
+    <li><strong>2. Selection-only AX</strong> — <code>kAXSelectedTextAttribute</code> works but ranges don't: you get the word/selection, no surrounding context. Tangent still works, just less grounded.</li>
+    <li><strong>3. Clipboard synthesis</strong> — save the pasteboard, synthesize ⌘C, read, restore. Gets whatever the app considers selected. Last resort: it's observable (pasteboard managers see it) and racy; gate it behind a setting, default on for known-poor apps only.</li>
+    <li><strong>4. Give up loudly</strong> — brief "nothing readable here" hint in the popup rather than silent failure, so trust in the trigger stays intact.</li>
+  </ul>
+  <div class="callout caution"><b>Needs your review — the noise problem</b>A bare, unmodified global double-click is extremely high-frequency: you double-click to select-and-retype text constantly while editing. Popping a panel on every one would make you uninstall your own app in a day. That's why Decision 2 exists and why my recommendation adds a modifier. The prior art agrees: macOS Look Up is ⌃⌘D or a deliberate three-finger tap; PopClip shows only a tiny pill; Raycast selection actions are hotkey-invoked.</div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2>Permissions, signing, lifecycle</h2>
+  <ul>
+    <li><strong>Accessibility (TCC)</strong> — one grant covers both the mouse event tap and all AX reads. Prompt once on first launch via <code>AXIsProcessTrustedWithOptions</code> with a friendly explainer window; poll until granted, then arm the tap. <span class="term">TCC<span class="def"><b>TCC</b> — Transparency, Consent &amp; Control: the macOS per-app permission database behind System Settings → Privacy &amp; Security. Grants are keyed to the app's bundle identity and code signature.</span></span></li>
+    <li><strong>Avoid Input Monitoring entirely</strong> — keyboard event taps need a second, scarier permission. Use the Carbon <code>RegisterEventHotKey</code> API for the grab hotkey (no permission needed) and keep the tap mouse-only.</li>
+    <li><strong>Sign with a stable identity from day one.</strong> TCC grants are tied to the code signature — an ad-hoc signature that changes every build silently revokes the grant, and "why did my tap stop working" becomes a daily mystery. Use your Developer ID (or a consistent self-signed cert) even for dev builds.</li>
+    <li><strong>No App Sandbox → no Mac App Store.</strong> AX reads of other apps are fundamentally incompatible with sandboxing. Distribution is a notarized DMG/zip, like PopClip, Raycast, Rectangle.</li>
+    <li><strong>Menu-bar agent</strong> — <code>LSUIElement = true</code> (no Dock icon, no app switcher entry); launch at login via <code>SMAppService</code>. The status-item menu holds: enable/disable toggle, per-app exclusion list, tangent-model and chat-model pickers, history window, settings, quit.</li>
+  </ul>
+  <div class="callout blocker"><b>Hard constraint</b>The event tap dies if the process is slow to service it (the OS disables unresponsive taps). The tap callback must do nothing but filter and enqueue — all AX reads and daemon I/O happen off that thread, and the tap gets re-enabled on <code>kCGEventTapDisabledByTimeout</code>.</div>
+  <div class="callout"><b>Assumption</b>Latency budget: popup visible &lt;100 ms, first streamed token &lt;1 s. This drives three choices — the popup surface is pre-warmed at launch, <code>tangentd</code> stays resident (not spawned per request), and the tangent default model stays cheap (Haiku or a local model), exactly as v1's <code>resolve_model</code> already encodes.</div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2>Proposed repo shape (tangent-2)</h2>
+<pre><code>tangent-2/
+  TangentBar/                    # Swift shell (AppKit, no storyboard)
+    App.swift                    #   NSApplication + status item + lifecycle
+    Sensor/EventTap.swift        #   mouse tap: double-click + modifier filter
+    Sensor/HotKey.swift          #   RegisterEventHotKey wrapper
+    Extract/AXReader.swift       #   element-at-point, ranges, fallback ladder
+    Surface/PopupPanel.swift     #   non-activating NSPanel + pre-warmed web view
+    Surface/ChatWindow.swift     #   promoted chats
+    Brain/DaemonClient.swift     #   spawn tangentd, JSON-lines framing, streams
+  core/                          # Rust workspace
+    tangent-core/                #   extracted v1 lib: model, tangent, explore,
+                                 #   transports, history, persist (no UI deps)
+    tangentd/                    #   thin bin: JSON-lines stdio loop over the core
+  protocol.md                    # the stdio contract, versioned
+  assets/                        # v1 brand carries over (icon, ink palette CSS)
+</code></pre>
+  <p>The protocol is deliberately boring — one JSON object per line: requests down (<code>tangent</code>, <code>grab</code>, <code>followup</code>, <code>set_model</code>, <code>list_models</code>), streamed events up (<code>chunk</code>, <code>done</code>, <code>error</code>, keyed by request id). It's the same shape <code>tangent-cli</code> already implies, and it keeps the Swift/Rust boundary testable from the command line with nothing but <code>echo | tangentd</code>.</p>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2>Decisions</h2>
+
+  <div class="decision rec" data-decision="process_architecture">
+    <strong>D1 · Process architecture</strong><span class="pill">Recommended: A</span>
+    <div class="opts">
+      <label class="opt"><input type="radio" name="d1" value="swift-shell-rust-daemon" data-field="d1" checked>
+        <span><b>A — Swift shell + Rust brain sidecar</b><small>Native AppKit menu-bar app owns tap/AX/panels; v1 core becomes <code>tangent-core</code> + <code>tangentd</code> daemon over JSON-lines stdio. Two languages, but each doing only what it's best at; the boundary is a testable protocol. This is the PopClip/Raycast-grade path.</small></span></label>
+      <label class="opt"><input type="radio" name="d1" value="all-rust" data-field="d1">
+        <span><b>B — All-Rust single process</b><small>Extend the existing codebase: <code>tray-icon</code> for the status item, <code>core-graphics</code> for the tap, <code>accessibility-sys</code> for AX, Dioxus multi-window for popup + chats, <code>objc2</code> surgery to make the popup window a non-activating panel. One language, maximum code reuse — but the flakiest layer lands in the roughest ecosystem, and you'll be debugging AX behavior through thin unsafe wrappers.</small></span></label>
+      <label class="opt"><input type="radio" name="d1" value="full-swift" data-field="d1">
+        <span><b>C — Full Swift rewrite</b><small>Cleanest single-platform citizen; transports, history, and keychain are all rewritten. Throws away the best of v1 and your Rust momentum. Only worth it if you want v2 to double as a serious Swift learning project.</small></span></label>
+    </div>
+    <div class="note-label">Notes on this decision</div>
+    <textarea data-note="d1" placeholder='e.g. "A, but I want the daemon protocol designed so B stays possible later"'></textarea>
+  </div>
+
+  <div class="decision rec" data-decision="tangent_trigger">
+    <strong>D2 · Tangent trigger (the double-click)</strong><span class="pill">Recommended: A</span>
+    <div class="opts">
+      <label class="opt"><input type="radio" name="d2" value="modifier-double-click" data-field="d2" checked>
+        <span><b>A — ⌥ + double-click</b><small>Deliberate, zero false positives while editing text, still one fluid gesture while reading. Modifier configurable in settings.</small></span></label>
+      <label class="opt"><input type="radio" name="d2" value="pill-affordance" data-field="d2">
+        <span><b>B — bare double-click → tiny pill</b><small>Every double-click shows a small dot near the cursor for ~1.5 s; clicking it opens the tangent. Zero-modifier discovery (PopClip model) but the pill flickers at you all day while editing.</small></span></label>
+      <label class="opt"><input type="radio" name="d2" value="hotkey-only" data-field="d2">
+        <span><b>C — hotkey on the auto-selected word</b><small>Double-click selects the word (native behavior), then a hotkey opens the tangent. Most conservative; loses the "one gesture" magic.</small></span></label>
+    </div>
+    <div class="note-label">Notes on this decision</div>
+    <textarea data-note="d2" placeholder='e.g. "A now, add B later as an opt-in"'></textarea>
+  </div>
+
+  <div class="decision rec" data-decision="grab_trigger">
+    <strong>D3 · Grab-selection trigger</strong><span class="pill">Recommended: A</span>
+    <div class="opts">
+      <label class="opt"><input type="radio" name="d3" value="hotkey" data-field="d3" checked>
+        <span><b>A — global hotkey on current selection</b><small>Select anywhere, hit e.g. ⌃⌘T (Look Up-style muscle memory). No mouse-tracking of drags, no visual noise, uses <code>RegisterEventHotKey</code> so no extra permission.</small></span></label>
+      <label class="opt"><input type="radio" name="d3" value="selection-pill" data-field="d3">
+        <span><b>B — PopClip-style pill on new selections</b><small>Watch for selection changes (AX notifications per app) and float a small "→ Tangent" pill. Discoverable but technically the most fragile piece in the whole design — selection-change observation is per-app and unreliable exactly where AX is weak.</small></span></label>
+      <label class="opt"><input type="radio" name="d3" value="menu-bar" data-field="d3">
+        <span><b>C — click the menu-bar icon</b><small>"Grab current selection" as the status item's primary click. Simplest possible; two hands / more travel.</small></span></label>
+    </div>
+    <div class="note-label">Notes on this decision</div>
+    <textarea data-note="d3" placeholder='e.g. "A, and make the hotkey chord configurable"'></textarea>
+  </div>
+
+  <div class="decision rec" data-decision="popup_rendering">
+    <strong>D4 · Popup + chat rendering</strong><span class="pill">Recommended: A</span>
+    <div class="opts">
+      <label class="opt"><input type="radio" name="d4" value="prewarmed-webview" data-field="d4" checked>
+        <span><b>A — pre-warmed WKWebView, v1 CSS reused</b><small>One hidden web view created at launch (kills first-open latency), hosting the same warm-paper ink HTML/CSS as v1's bubbles and markdown. Popup and promoted chat windows share one rendering system; <code>pulldown-cmark</code> HTML from the daemon drops straight in.</small></span></label>
+      <label class="opt"><input type="radio" name="d4" value="native-textview" data-field="d4">
+        <span><b>B — native NSTextView + AttributedString markdown</b><small>Lighter, instant, fully native feel. But you build markdown styling twice (popup vs. chat windows) or accept a plainer popup, and v1's visual identity doesn't carry over.</small></span></label>
+    </div>
+    <div class="note-label">Notes on this decision</div>
+    <textarea data-note="d4" placeholder='e.g. "A, but keep the popup HTML minimal — no full app shell"'></textarea>
+  </div>
+
+  <div class="decision rec" data-decision="core_reuse">
+    <strong>D5 · How v2 gets the v1 core</strong><span class="pill">Recommended: A</span>
+    <div class="opts">
+      <label class="opt"><input type="radio" name="d5" value="extract-crate" data-field="d5" checked>
+        <span><b>A — extract <code>tangent-core</code> into tangent-2 (copy once, own it)</b><small>Copy <code>model / tangent / explore / claude / local_* / remote / backend / history / persist / core</code> into a fresh lib crate in this repo, drop the Dioxus deps, freeze v1. Clean ownership, no cross-repo coupling; v1 remains a working reference you never have to touch (per your instruction).</small></span></label>
+      <label class="opt"><input type="radio" name="d5" value="path-dep" data-field="d5">
+        <span><b>B — depend on v1 via path/workspace</b><small>No duplication, but v2 builds now depend on the v1 tree staying put and staying green, and v1 modules would need refactoring to strip UI deps — which contradicts "don't revise v1".</small></span></label>
+      <label class="opt"><input type="radio" name="d5" value="fresh" data-field="d5">
+        <span><b>C — fresh core, v1 as spec only</b><small>Rewrite the domain + transports with hindsight. Cleanest slate, slowest to first working popup.</small></span></label>
+    </div>
+    <div class="note-label">Notes on this decision</div>
+    <textarea data-note="d5" placeholder='e.g. "A — and note anything you would refactor during the copy"'></textarea>
+  </div>
+
+  <div class="decision" data-decision="build_order">
+    <strong>D6 · First milestone to build</strong>
+    <div class="opts">
+      <label class="opt"><input type="radio" name="d6" value="spike-extraction" data-field="d6" checked>
+        <span><b>A — extraction spike first</b><small>A throwaway Swift CLI: tap + AX read, printing word/context to stdout as you ⌥-double-click around macOS. De-risks the one layer whose feasibility varies by app <em>before</em> any UI exists. ~a day of work, and the AX findings feed the fallback ladder.</small></span></label>
+      <label class="opt"><input type="radio" name="d6" value="vertical-slice" data-field="d6">
+        <span><b>B — thin vertical slice</b><small>Menu bar + tap + AX + popup + <code>claude -p</code> hardwired, no daemon, no settings. Feels real sooner; risks building surfaces on an extraction layer you haven't validated.</small></span></label>
+    </div>
+    <div class="note-label">Notes on this decision</div>
+    <textarea data-note="d6" placeholder='e.g. "spike, but run it against my actual daily apps: Arc, Slack, kitty…"'></textarea>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section>
+  <h2>Anything else</h2>
+  <textarea data-note="catchall" placeholder="Cross-cutting thoughts — naming, timeline, which apps matter most day-to-day, whether v3 OCR-at-point changes anything now… (not a substitute for the per-decision notes above)"></textarea>
+</section>
+
+<footer><button onclick="exportJSON()">Export JSON</button></footer>
+<pre id="out"></pre>
+<div id="toast">Copied</div>
+
+<script>
+document.addEventListener('click', (e) => {
+  const term = e.target.closest('.term');
+  document.querySelectorAll('.term.open').forEach(t => { if (t !== term) t.classList.remove('open'); });
+  if (term && !e.target.closest('.def')) term.classList.toggle('open');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.term.open').forEach(t => t.classList.remove('open'));
+});
+function exportJSON() {
+  const data = { exportedAt: new Date().toISOString(), decisions: {}, notes: {} };
+  document.querySelectorAll('[data-decision]').forEach(d => {
+    const key = d.dataset.decision;
+    const sel = d.querySelector('input[data-field]:checked');
+    data.decisions[key] = sel ? sel.value : null;
+  });
+  document.querySelectorAll('[data-note]').forEach(t => { data.notes[t.dataset.note] = t.value; });
+  const json = JSON.stringify(data, null, 2);
+  const out = document.getElementById('out');
+  out.textContent = json; out.style.display = 'block'; out.scrollIntoView({ behavior: 'smooth' });
+  const done = () => { const t = document.getElementById('toast'); t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(json).then(done, () => { console.log(json); alert('Clipboard blocked — JSON shown below and logged.'); });
+  else { console.log(json); alert('Clipboard unavailable — JSON shown below and logged.'); }
+}
+</script>
+</body>
+</html>

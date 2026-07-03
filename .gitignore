@@ -1,0 +1,8 @@
+# build products
+.build/
+spike/axspike
+*.o
+
+# machine-local
+.hippo/
+.DS_Store
