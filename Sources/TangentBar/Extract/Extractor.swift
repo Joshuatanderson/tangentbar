@@ -186,10 +186,19 @@ enum Extractor {
         var app = focused.app
         if selection.isEmpty {
             let pb = NSPasteboard.general
+            // Copy-on-select (ghostty/cmux) lands a beat AFTER mouse-up — a
+            // single immediate check loses the race (measured: our check ran
+            // 1–27 ms post-drag and always saw "unchanged"). Poll up to 360 ms.
+            var attempts = 0
+            while pb.changeCount == pbCountAtDragStart && attempts < 12 {
+                usleep(30_000)
+                attempts += 1
+            }
             guard pb.changeCount != pbCountAtDragStart,
                   let s = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !s.isEmpty, s.count < 20_000 else {
-                NSLog("forSelection: nothing — app=%@ AX selection empty, pasteboard unchanged", app)
+                NSLog("forSelection: nothing — app=%@ AX selection empty, pasteboard unchanged after %dms",
+                      app, attempts * 30)
                 return nil
             }
             selection = s
