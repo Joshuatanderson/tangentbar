@@ -98,10 +98,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         NSLog("double-click at (%.0f, %.0f) alt=%d", location.x, location.y, alt ? 1 : 0)
         let allowClipboard = config.clipboardFallback
+        let excluded = config.excludedApps
         extractQueue.async { [weak self] in
             let extraction = Extractor.forDoubleClick(at: location,
                                                       pbCountAtClick: pbCountAtClick,
-                                                      allowClipboard: allowClipboard)
+                                                      allowClipboard: allowClipboard,
+                                                      excludedApps: excluded)
             NSLog("extraction: app=%@ ladder=%@ word=%@ hasText=%d",
                   extraction.app, extraction.ladder, extraction.word ?? "∅",
                   extraction.hasText ? 1 : 0)
@@ -124,11 +126,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Selection chat (flow B)
 
     private func handleDragSelect(at location: CGPoint, pbCountAtDown: Int) {
+        NSLog("drag-up at (%.0f, %.0f)", location.x, location.y)
         guard config.enabled, config.chatOnSelect else { return }
-        guard !panel.isVisible, !chatPanel.isVisible else { return }
+        guard !panel.isVisible, !chatPanel.isVisible else {
+            NSLog("drag-select: blocked — a surface is open (tangent=%d chat=%d)",
+                  panel.isVisible ? 1 : 0, chatPanel.isVisible ? 1 : 0)
+            return
+        }
         extractQueue.async { [weak self] in
-            guard let self,
-                  let grab = Extractor.forSelection(pbCountAtDragStart: pbCountAtDown) else { return }
+            guard let self else { return }
+            guard let grab = Extractor.forSelection(pbCountAtDragStart: pbCountAtDown) else {
+                return  // forSelection logged why
+            }
             if self.config.excludedApps.contains(grab.app) { return }
             NSLog("drag-select: app=%@ selection=%d chars", grab.app, grab.selection.count)
             DispatchQueue.main.async {

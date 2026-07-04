@@ -88,11 +88,15 @@ enum Extractor {
     /// Full extraction for a double-click at `point`. `pbCountAtClick` is the
     /// pasteboard changeCount snapshotted in the tap callback (rung 3a).
     /// Call off the main thread; AX calls can stall.
-    static func forDoubleClick(at point: CGPoint, pbCountAtClick: Int, allowClipboard: Bool) -> Extraction {
+    static func forDoubleClick(at point: CGPoint, pbCountAtClick: Int, allowClipboard: Bool,
+                               excludedApps: [String] = []) -> Extraction {
         var byPoint = extract(at: point)
         // Own windows never trigger.
         if byPoint.appPid == ProcessInfo.processInfo.processIdentifier { return Extraction() }
         if byPoint.role == "AXSecureTextField" { return Extraction() }
+        // Excluded apps bail BEFORE the invasive rungs — 3b would synthesize
+        // ⌘C into them (games interpret keystrokes).
+        if excludedApps.contains(byPoint.app) { return Extraction() }
 
         var bySelection = extractFocused()
         if bySelection.role == "AXSecureTextField" { return Extraction() }
@@ -184,13 +188,19 @@ enum Extractor {
             let pb = NSPasteboard.general
             guard pb.changeCount != pbCountAtDragStart,
                   let s = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !s.isEmpty, s.count < 20_000 else { return nil }
+                  !s.isEmpty, s.count < 20_000 else {
+                NSLog("forSelection: nothing — app=%@ AX selection empty, pasteboard unchanged", app)
+                return nil
+            }
             selection = s
             if app == "?" {
                 app = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
             }
         }
-        guard selection.count >= 4 else { return nil }  // too short to chat about
+        guard selection.count >= 4 else {
+            NSLog("forSelection: too short (%d chars) — app=%@", selection.count, app)
+            return nil
+        }
         return (selection, focused.context, app)
     }
 

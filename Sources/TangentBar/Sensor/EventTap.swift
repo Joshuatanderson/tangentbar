@@ -29,7 +29,11 @@ final class EventTap {
             }
             if type == .leftMouseDown {
                 me.downLocation = event.location
-                me.pbCountAtDown = NSPasteboard.general.changeCount
+                // Pasteboard reads are XPC to pboardd — too slow for the tap
+                // callback's latency budget (the OS disables laggy taps).
+                // Snapshot on main instead: it runs before any copy-on-select
+                // write, which needs a selection that doesn't exist yet.
+                DispatchQueue.main.async { me.pbCountAtDown = NSPasteboard.general.changeCount }
                 return Unmanaged.passUnretained(event)
             }
             if type == .leftMouseUp, event.getIntegerValueField(.mouseEventClickState) == 2 {
@@ -45,8 +49,8 @@ final class EventTap {
                 let dx = location.x - me.downLocation.x
                 let dy = location.y - me.downLocation.y
                 if dx * dx + dy * dy > 64 {  // > 8 px of travel = a drag, not a click
-                    let pbAtDown = me.pbCountAtDown
-                    DispatchQueue.main.async { me.onDragSelect?(location, pbAtDown) }
+                    // pbCountAtDown is only touched on main — read it there too.
+                    DispatchQueue.main.async { me.onDragSelect?(location, me.pbCountAtDown) }
                 }
             }
             return Unmanaged.passUnretained(event)
