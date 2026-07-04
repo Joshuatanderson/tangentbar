@@ -72,12 +72,34 @@ final class Engine {
     func streamTangent(word: String, context: String, config: Config,
                        onChunk: @escaping (String) -> Void,
                        onDone: @escaping (String) -> Void) {
+        stream(system: nil, user: Engine.tangentPrompt(word: word, context: context),
+               maxTokens: 300, config: config, onChunk: onChunk, onDone: onDone)
+    }
+
+    /// A selection-chat turn (v1 explore semantics): constant system framing +
+    /// a user message replaying excerpt and conversation.
+    func streamChat(excerpt: String, history: [Excerpt.Turn], config: Config,
+                    onChunk: @escaping (String) -> Void,
+                    onDone: @escaping (String) -> Void) {
+        stream(system: Excerpt.system,
+               user: Excerpt.prompt(excerpt: excerpt, history: history),
+               maxTokens: 700, config: config, onChunk: onChunk, onDone: onDone)
+    }
+
+    private func stream(system: String?, user: String, maxTokens: Int, config: Config,
+                        onChunk: @escaping (String) -> Void,
+                        onDone: @escaping (String) -> Void) {
         cancel()
         cancelled = false  // cancel() above was housekeeping, not a user dismissal
-        let prompt = Engine.tangentPrompt(word: word, context: context)
+        var messages: [[String: String]] = []
+        if let system { messages.append(["role": "system", "content": system]) }
+        messages.append(["role": "user", "content": user])
+        // The claude fallback takes one flat prompt; fold the system in.
+        let flatPrompt = system.map { $0 + "\n\n" + user } ?? user
+
         guard config.provider == "lmstudio",
               let url = URL(string: config.localBaseURL + "/chat/completions") else {
-            streamViaClaude(prompt: prompt, model: config.claudeModel, onChunk: onChunk, onDone: onDone)
+            streamViaClaude(prompt: flatPrompt, model: config.claudeModel, onChunk: onChunk, onDone: onDone)
             return
         }
         let stream = SSEStream(onChunk: onChunk) { [weak self] ok, receivedAny in
@@ -89,7 +111,7 @@ final class Engine {
                 guard let self, !self.cancelled else { return }
                 // Local server down or empty — fall back to claude.
                 onChunk("")
-                self.streamViaClaude(prompt: prompt, model: config.claudeModel,
+                self.streamViaClaude(prompt: flatPrompt, model: config.claudeModel,
                                      onChunk: onChunk, onDone: onDone)
             } else {
                 onDone("stream interrupted")
@@ -97,8 +119,8 @@ final class Engine {
         }
         stream.start(url: url, body: [
             "model": config.tangentModel,
-            "messages": [["role": "user", "content": prompt]],
-            "max_tokens": 300,
+            "messages": messages,
+            "max_tokens": maxTokens,
             "stream": true,
             "ttl": 7200,
         ])

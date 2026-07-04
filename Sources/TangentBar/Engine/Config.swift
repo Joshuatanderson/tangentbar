@@ -19,6 +19,9 @@ struct Config: Codable {
     /// Interpose the pill affordance (click it to open) instead of defining
     /// immediately on double-click. Off by default: double-click just defines.
     var usePill = false
+    /// Flow B: drag-selecting text offers an "ask about …" pill that opens a
+    /// small chat seeded with the excerpt (v1 explore semantics).
+    var chatOnSelect = true
     /// Seconds the pill affordance lingers after a double-click.
     var pillTimeout = 1.6
     /// Allow the ⌘C-synthesis rung (rung 3b) where AX has no text.
@@ -38,6 +41,7 @@ struct Config: Codable {
         tangentModel = try c.decodeIfPresent(String.self, forKey: .tangentModel) ?? d.tangentModel
         claudeModel = try c.decodeIfPresent(String.self, forKey: .claudeModel) ?? d.claudeModel
         usePill = try c.decodeIfPresent(Bool.self, forKey: .usePill) ?? d.usePill
+        chatOnSelect = try c.decodeIfPresent(Bool.self, forKey: .chatOnSelect) ?? d.chatOnSelect
         pillTimeout = try c.decodeIfPresent(Double.self, forKey: .pillTimeout) ?? d.pillTimeout
         clipboardFallback = try c.decodeIfPresent(Bool.self, forKey: .clipboardFallback) ?? d.clipboardFallback
         excludedApps = try c.decodeIfPresent([String].self, forKey: .excludedApps) ?? d.excludedApps

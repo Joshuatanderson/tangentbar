@@ -15,12 +15,16 @@ final class Pill: NSObject {
     static let accent = NSColor(srgbRed: 0.227, green: 0.302, blue: 0.561, alpha: 1) // #3a4d8f
 
     func show(word: String, atCG cgPoint: CGPoint, timeout: TimeInterval, onClick: @escaping () -> Void) {
+        let label = word.count > 24 ? String(word.prefix(24)) + "…" : word
+        show(label: "⌁ define “\(label)”", atCG: cgPoint, timeout: timeout, onClick: onClick)
+    }
+
+    /// General affordance pill — reads as a button, not as output.
+    func show(label: String, atCG cgPoint: CGPoint, timeout: TimeInterval, onClick: @escaping () -> Void) {
         dismiss()
         self.onClick = onClick
 
-        // Read as a button, not as output: "define" is the affordance.
-        let label = word.count > 24 ? String(word.prefix(24)) + "…" : word
-        let field = NSTextField(labelWithString: "⌁ define “\(label)”")
+        let field = NSTextField(labelWithString: label)
         field.font = NSFont(name: "Iowan Old Style", size: 12) ?? .systemFont(ofSize: 12, weight: .medium)
         field.textColor = Pill.ink
         field.sizeToFit()

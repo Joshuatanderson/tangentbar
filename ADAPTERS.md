@@ -57,8 +57,10 @@ Rungs: `1` full AX (word+context) · `2` selection-only · `2b` value-only ·
 - [ ] Onboarding flow (permissions walk-through replacing the poll-timer; provider
       setup once, persisted — config file exists at
       `~/Library/Application Support/TangentBar/config.json`).
-- [ ] Grab-selection flow (flow B): pill on selection + global hotkey (Carbon
-      `RegisterEventHotKey`, no extra permission) → chat window seeded with excerpt.
+- [~] Grab-selection flow (flow B): DONE for the pill half — drag-select →
+      "ask about …" pill → chat panel seeded with the excerpt (v1 explore port:
+      `Engine/Excerpt.swift`, `Surface/ChatPanel.swift`; menu toggle "Chat on
+      Selection"). Global hotkey (Carbon `RegisterEventHotKey`) still pending.
 - [ ] Chat window + follow-ups in the tangent panel (panel is read-only v0).
 - [ ] Markdown hierarchy in `NSTextView` (AttributedString `PresentationIntent`
       mapping — the D4 investigation).

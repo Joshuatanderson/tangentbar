@@ -8,6 +8,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let eventTap = EventTap()
     private let pill = Pill()
     private let panel = TangentPanel()
+    private let chatPanel = ChatPanel()
+    private var chatExcerpt = ""
+    private var chatHistory: [Excerpt.Turn] = []
     private let engine = Engine()
     private var statusItem: NSStatusItem?
     private let modelItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
@@ -44,6 +47,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engine.prewarm(config: config)
         refreshLocalModels(autoSelect: true)
 
+        if CommandLine.arguments.contains("--chat") {
+            runChatProbe()
+            return
+        }
         if CommandLine.arguments.contains("--selftest") {
             runSelfTest()
             return
@@ -75,6 +82,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         eventTap.onDoubleClick = { [weak self] location, alt, pbCount in
             self?.handleDoubleClick(at: location, alt: alt, pbCountAtClick: pbCount)
         }
+        eventTap.onDragSelect = { [weak self] location, pbCountAtDown in
+            self?.handleDragSelect(at: location, pbCountAtDown: pbCountAtDown)
+        }
         if !eventTap.start() {
             setStatusBadge("!")
         }
@@ -84,7 +94,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func handleDoubleClick(at location: CGPoint, alt: Bool, pbCountAtClick: Int) {
         guard config.enabled else { return }
-        guard !panel.isVisible else { return }  // a tangent is already open
+        guard !panel.isVisible, !chatPanel.isVisible else { return }  // one surface at a time
 
         NSLog("double-click at (%.0f, %.0f) alt=%d", location.x, location.y, alt ? 1 : 0)
         let allowClipboard = config.clipboardFallback
@@ -109,6 +119,60 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
         }
+    }
+
+    // MARK: Selection chat (flow B)
+
+    private func handleDragSelect(at location: CGPoint, pbCountAtDown: Int) {
+        guard config.enabled, config.chatOnSelect else { return }
+        guard !panel.isVisible, !chatPanel.isVisible else { return }
+        extractQueue.async { [weak self] in
+            guard let self,
+                  let grab = Extractor.forSelection(pbCountAtDragStart: pbCountAtDown) else { return }
+            if self.config.excludedApps.contains(grab.app) { return }
+            NSLog("drag-select: app=%@ selection=%d chars", grab.app, grab.selection.count)
+            DispatchQueue.main.async {
+                let title = Excerpt.title(of: grab.selection)
+                self.pill.show(label: "⌁ ask about “\(title)”", atCG: location,
+                               timeout: self.config.pillTimeout) {
+                    self.openChat(selection: grab.selection, source: grab.source,
+                                  app: grab.app, at: location)
+                }
+            }
+        }
+    }
+
+    private func openChat(selection: String, source: String?, app: String, at location: CGPoint) {
+        chatExcerpt = Excerpt.focus(source: source, selection: selection)
+        chatHistory = []
+        chatPanel.present(title: Excerpt.title(of: selection), excerpt: chatExcerpt,
+                          sourceApp: app, model: config.tangentModel, atCG: location,
+                          onSend: { [weak self] question in
+                              self?.sendChatTurn(question)
+                          },
+                          onClose: { [weak self] in
+                              self?.engine.cancel()
+                          })
+    }
+
+    private func sendChatTurn(_ question: String) {
+        chatHistory.append(.init(role: .user, content: question))
+        chatPanel.appendUser(question)
+        chatPanel.setStatus("thinking…")
+        var reply = ""
+        engine.streamChat(excerpt: chatExcerpt, history: chatHistory, config: config,
+                          onChunk: { [weak self] chunk in
+                              reply += chunk
+                              self?.chatPanel.appendAssistant(chunk)
+                          },
+                          onDone: { [weak self] status in
+                              guard let self else { return }
+                              if !reply.isEmpty {
+                                  self.chatHistory.append(.init(role: .assistant, content: reply))
+                                  self.chatPanel.appendAssistant("\n")
+                              }
+                              self.chatPanel.setStatus(status)
+                          })
     }
 
     private func openTangent(_ extraction: Extraction, word: String, at location: CGPoint) {
@@ -151,6 +215,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pillToggle.state = config.usePill ? .on : .off
         menu.addItem(pillToggle)
 
+        let chatToggle = NSMenuItem(title: "Chat on Selection", action: #selector(toggleChat(_:)), keyEquivalent: "")
+        chatToggle.target = self
+        chatToggle.state = config.chatOnSelect ? .on : .off
+        menu.addItem(chatToggle)
+
         modelItem.submenu = NSMenu()
         menu.addItem(modelItem)
         rebuildModelMenu()
@@ -188,6 +257,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func togglePill(_ sender: NSMenuItem) {
         config.usePill.toggle()
         sender.state = config.usePill ? .on : .off
+        config.save()
+    }
+
+    @objc private func toggleChat(_ sender: NSMenuItem) {
+        config.chatOnSelect.toggle()
+        sender.state = config.chatOnSelect ? .on : .off
         config.save()
     }
 
@@ -284,6 +359,22 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                  print("\n[\(status)]")
                                  exit(0)
                              })
+    }
+
+    /// `--chat`: present the selection chat with a canned excerpt, auto-send a
+    /// question through the real engine path, then exit. UI + engine composed.
+    private func runChatProbe() {
+        let excerpt = "The tangent line to a circle touches it at exactly one point, called the point of tangency; the radius drawn to that point is perpendicular to the line."
+        let center = CGPoint(x: (NSScreen.main?.frame.width ?? 1200) / 2,
+                             y: (NSScreen.main?.frame.height ?? 800) / 2)
+        openChat(selection: excerpt, source: nil, app: "TangentBar", at: center)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.sendChatTurn("Why perpendicular?")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            print("chatprobe: history turns = \(self?.chatHistory.count ?? -1)")
+            exit(self?.chatHistory.count == 2 ? 0 : 1)
+        }
     }
 
     // MARK: Self-test (no interaction, auto-exits)

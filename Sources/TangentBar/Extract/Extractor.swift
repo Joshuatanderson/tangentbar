@@ -169,6 +169,31 @@ enum Extractor {
         return cleaned
     }
 
+    /// Extraction for a drag-selection (flow B): the full selected text plus
+    /// the surrounding source for excerpt padding. Terminals cover us via
+    /// copy-on-select — the drag itself wrote the pasteboard.
+    static func forSelection(pbCountAtDragStart: Int) -> (selection: String, source: String?, app: String)? {
+        let focused = extractFocused()
+        if focused.appPid == ProcessInfo.processInfo.processIdentifier { return nil }
+        if focused.role == "AXSecureTextField" { return nil }
+
+        var selection = focused.word?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        selection = selection.replacingOccurrences(of: "\u{FFFC}", with: " ")
+        var app = focused.app
+        if selection.isEmpty {
+            let pb = NSPasteboard.general
+            guard pb.changeCount != pbCountAtDragStart,
+                  let s = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !s.isEmpty, s.count < 20_000 else { return nil }
+            selection = s
+            if app == "?" {
+                app = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
+            }
+        }
+        guard selection.count >= 4 else { return nil }  // too short to chat about
+        return (selection, focused.context, app)
+    }
+
     // MARK: Context enrichment
 
     /// Centered window (±contextRadius) around the last occurrence of `word`.
