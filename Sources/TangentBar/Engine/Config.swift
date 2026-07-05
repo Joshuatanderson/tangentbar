@@ -16,6 +16,13 @@ struct Config: Codable {
     var tangentModel = "qwen3.5-0.8b-mlx"
     /// Model used when falling back to the claude CLI.
     var claudeModel = "haiku"
+    /// Model for selection chats. Empty = same as tangentModel; definitions
+    /// want tiny-and-instant, chats can afford something smarter.
+    var chatModel = ""
+    var chatLocalBaseURL = ""
+
+    var resolvedChatModel: String { chatModel.isEmpty ? tangentModel : chatModel }
+    var resolvedChatBaseURL: String { chatModel.isEmpty ? localBaseURL : chatLocalBaseURL }
     /// Interpose the pill affordance (click it to open) instead of defining
     /// immediately on double-click. Off by default: double-click just defines.
     var usePill = false
@@ -40,6 +47,8 @@ struct Config: Codable {
         localBaseURL = try c.decodeIfPresent(String.self, forKey: .localBaseURL) ?? d.localBaseURL
         tangentModel = try c.decodeIfPresent(String.self, forKey: .tangentModel) ?? d.tangentModel
         claudeModel = try c.decodeIfPresent(String.self, forKey: .claudeModel) ?? d.claudeModel
+        chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
+        chatLocalBaseURL = try c.decodeIfPresent(String.self, forKey: .chatLocalBaseURL) ?? d.chatLocalBaseURL
         usePill = try c.decodeIfPresent(Bool.self, forKey: .usePill) ?? d.usePill
         chatOnSelect = try c.decodeIfPresent(Bool.self, forKey: .chatOnSelect) ?? d.chatOnSelect
         pillTimeout = try c.decodeIfPresent(Double.self, forKey: .pillTimeout) ?? d.pillTimeout

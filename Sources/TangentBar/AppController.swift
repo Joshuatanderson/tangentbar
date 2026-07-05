@@ -13,12 +13,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var chatHistory: [Excerpt.Turn] = []
     private let engine = Engine()
     private var statusItem: NSStatusItem?
-    private let modelItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
+    private let modelItem = NSMenuItem(title: "Define Model", action: nil, keyEquivalent: "")
+    private let chatModelItem = NSMenuItem(title: "Chat Model", action: nil, keyEquivalent: "")
     private var localModels: [LocalModel] = []
     private let extractQueue = DispatchQueue(label: "tangent.extract", qos: .userInitiated)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         config.save()  // materialize defaults on first run
+        setupEditMenu()
 
         if CommandLine.arguments.contains("--models") {
             runModelProbe()
@@ -155,7 +157,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         chatExcerpt = Excerpt.focus(source: source, selection: selection)
         chatHistory = []
         chatPanel.present(title: Excerpt.title(of: selection), excerpt: chatExcerpt,
-                          sourceApp: app, model: config.tangentModel, atCG: location,
+                          sourceApp: app, model: config.resolvedChatModel, atCG: location,
                           onSend: { [weak self] question in
                               self?.sendChatTurn(question)
                           },
@@ -207,6 +209,26 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              })
     }
 
+    /// ⌘V/⌘C/⌘X/⌘A in text fields are routed through the Edit menu's key
+    /// equivalents — a menu-bar-less accessory app silently drops them, which
+    /// breaks both manual paste and dictation tools that insert by simulating
+    /// ⌘V (Wispr Flow). A programmatic main menu restores the routing.
+    private func setupEditMenu() {
+        let main = NSMenu()
+        let editHolder = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editHolder.submenu = edit
+        main.addItem(editHolder)
+        NSApp.mainMenu = main
+    }
+
     // MARK: Status item
 
     private func setupStatusItem() {
@@ -231,6 +253,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         modelItem.submenu = NSMenu()
         menu.addItem(modelItem)
+        chatModelItem.submenu = NSMenu()
+        menu.addItem(chatModelItem)
         rebuildModelMenu()
         menu.addItem(.separator())
 
@@ -295,6 +319,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.config.localBaseURL = best.baseURL
                 self.config.save()
             }
+            // A chat model that's no longer served falls back to "same as define".
+            if !models.isEmpty, !self.config.chatModel.isEmpty,
+               !models.contains(where: { $0.id == self.config.chatModel }) {
+                self.config.chatModel = ""
+                self.config.chatLocalBaseURL = ""
+                self.config.save()
+            }
             self.rebuildModelMenu()
             // Launch already prewarmed the saved model; only re-warm on change.
             if autoSelect, (self.config.tangentModel, self.config.localBaseURL) != before {
@@ -304,14 +335,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func rebuildModelMenu() {
-        modelItem.title = "Model: \(config.tangentModel)"
-        let submenu = modelItem.submenu ?? NSMenu()
-        submenu.removeAllItems()
+        modelItem.title = "Define Model: \(config.tangentModel)"
+        chatModelItem.title = "Chat Model: \(config.chatModel.isEmpty ? "same as define" : config.chatModel)"
+
+        let defineMenu = modelItem.submenu ?? NSMenu()
+        defineMenu.removeAllItems()
         if localModels.isEmpty {
             let none = NSMenuItem(title: "No local models found (claude fallback)",
                                   action: nil, keyEquivalent: "")
             none.isEnabled = false
-            submenu.addItem(none)
+            defineMenu.addItem(none)
         }
         for model in localModels {
             let item = NSMenuItem(title: "\(model.id) — \(model.server)",
@@ -319,9 +352,25 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.target = self
             item.representedObject = model
             item.state = (model.id == config.tangentModel && model.baseURL == config.localBaseURL) ? .on : .off
-            submenu.addItem(item)
+            defineMenu.addItem(item)
         }
-        modelItem.submenu = submenu
+        modelItem.submenu = defineMenu
+
+        let chatMenu = chatModelItem.submenu ?? NSMenu()
+        chatMenu.removeAllItems()
+        let same = NSMenuItem(title: "Same as Define", action: #selector(selectChatModel(_:)), keyEquivalent: "")
+        same.target = self
+        same.state = config.chatModel.isEmpty ? .on : .off
+        chatMenu.addItem(same)
+        for model in localModels {
+            let item = NSMenuItem(title: "\(model.id) — \(model.server)",
+                                  action: #selector(selectChatModel(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = model
+            item.state = (model.id == config.chatModel && model.baseURL == config.chatLocalBaseURL) ? .on : .off
+            chatMenu.addItem(item)
+        }
+        chatModelItem.submenu = chatMenu
     }
 
     @objc private func selectModel(_ sender: NSMenuItem) {
@@ -331,6 +380,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         config.save()
         rebuildModelMenu()
         engine.prewarm(config: config)  // keep the newly chosen model hot
+    }
+
+    @objc private func selectChatModel(_ sender: NSMenuItem) {
+        if let model = sender.representedObject as? LocalModel {
+            config.chatModel = model.id
+            config.chatLocalBaseURL = model.baseURL
+        } else {
+            // "Same as Define"
+            config.chatModel = ""
+            config.chatLocalBaseURL = ""
+        }
+        config.save()
+        rebuildModelMenu()
     }
 
     @objc private func testPanel() {
@@ -386,6 +448,26 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let focused = Extractor.extractFocused()
             NSLog("chatprobe: systemwide AX focus → app=%@ role=%@", focused.app, focused.role)
             self?.sendChatTurn("Why perpendicular?")
+        }
+        // Wispr-style insertion test: pasteboard + synthetic ⌘V at ourselves.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            let pb = NSPasteboard.general
+            let saved = pb.string(forType: .string)
+            pb.clearContents()
+            pb.setString("DICTATED", forType: .string)
+            let src = CGEventSource(stateID: .combinedSessionState)
+            if let down = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true),
+               let up = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false) {
+                down.flags = .maskCommand
+                up.flags = .maskCommand
+                down.postToPid(ProcessInfo.processInfo.processIdentifier)
+                up.postToPid(ProcessInfo.processInfo.processIdentifier)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                NSLog("chatprobe: after synthetic ⌘V input=\"%@\"", self?.chatPanel.inputText ?? "?")
+                pb.clearContents()
+                if let saved { pb.setString(saved, forType: .string) }
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
             print("chatprobe: history turns = \(self?.chatHistory.count ?? -1)")

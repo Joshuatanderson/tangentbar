@@ -9,6 +9,28 @@ import AppKit
 
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// Accessory apps have no menu bar, so ⌘V/⌘C/… don't reliably route via
+    /// NSApp.mainMenu — dispatch the standard editing actions ourselves.
+    /// Dictation tools that insert by simulating ⌘V (Wispr Flow) need this.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+              let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let action: Selector?
+        switch key {
+        case "v": action = #selector(NSText.paste(_:))
+        case "c": action = #selector(NSText.copy(_:))
+        case "x": action = #selector(NSText.cut(_:))
+        case "a": action = #selector(NSText.selectAll(_:))
+        case "z": action = Selector(("undo:"))
+        default: action = nil
+        }
+        if let action, NSApp.sendAction(action, to: nil, from: self) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 final class ChatPanel: NSObject, NSTextFieldDelegate {
@@ -22,6 +44,8 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
     private var previousApp: NSRunningApplication?
 
     var isVisible: Bool { panel?.isVisible ?? false }
+    /// Probe access: what's currently typed in the input field.
+    var inputText: String { input?.stringValue ?? "" }
 
     private static let bodyFont = NSFont(name: "Charter", size: 13.5) ?? .systemFont(ofSize: 13.5)
 
