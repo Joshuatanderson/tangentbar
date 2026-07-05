@@ -1,8 +1,9 @@
 // The selection chat (flow B, v1 "explore"): highlight text → a small card
 // seeded with the excerpt, streaming follow-ups through the configured model.
-// Unlike the disposable tangent panel it holds a conversation, so it closes on
-// Esc or ✕ — not on a stray outside click. Typing needs key status, which a
-// nonactivating panel gets without activating us over the source app.
+// The app genuinely ACTIVATES while the chat is open: dictation tools (Wispr
+// Flow) resolve their target via the system AX focused element, which only
+// points at our input when we're the active app. Focus is handed back to the
+// source app on dismiss. Closes on Esc, ✕, or a click outside.
 
 import AppKit
 
@@ -17,6 +18,8 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
     private var input: NSTextField?
     private var onSend: ((String) -> Void)?
     private var onClose: (() -> Void)?
+    private var clickAwayMonitor: Any?
+    private var previousApp: NSRunningApplication?
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -116,6 +119,12 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
             origin.y = min(max(screen.visibleFrame.minY + 8, origin.y), screen.visibleFrame.maxY - height - 8)
         }
         panel.setFrameOrigin(origin)
+
+        // Activate for real: dictation (Wispr Flow) targets the system-wide
+        // AX focused element, which requires our app to be active before it
+        // sees the input as a text field. We restore the source app on dismiss.
+        previousApp = NSWorkspace.shared.frontmostApplication
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
 
         self.panel = panel
@@ -126,6 +135,12 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
         // Show the grounding up front, muted, so the user sees what the model sees.
         appendQuote(excerpt)
         panel.makeFirstResponder(inputField)
+
+        // Click-away dismissal: global monitors see clicks in OTHER apps —
+        // any click outside while we're active lands there.
+        clickAwayMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.dismiss()
+        }
     }
 
     // MARK: Transcript
@@ -176,12 +191,20 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
     @objc private func closeClicked() { dismiss() }
 
     func dismiss() {
+        if let monitor = clickAwayMonitor { NSEvent.removeMonitor(monitor) }
+        clickAwayMonitor = nil
+        let wasVisible = panel?.isVisible ?? false
         panel?.orderOut(nil)
         panel = nil
         textView = nil
         statusField = nil
         input = nil
         onSend = nil
+        // Hand focus back to the app the selection came from.
+        if wasVisible, previousApp?.isTerminated == false {
+            previousApp?.activate()
+        }
+        previousApp = nil
         let handler = onClose
         onClose = nil
         handler?()
