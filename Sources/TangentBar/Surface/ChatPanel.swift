@@ -99,8 +99,12 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
         content.addSubview(inputField)
         content.addSubview(status)
 
+        // Deliberately NOT .nonactivatingPanel: that style forbids clicks from
+        // activating the app, and dictation tools need the app active before
+        // the system AX focus chain reaches our input. A click into the field
+        // must be able to activate us.
         let panel = KeyablePanel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-                                 styleMask: [.nonactivatingPanel, .borderless],
+                                 styleMask: [.borderless],
                                  backing: .buffered, defer: false)
         panel.isFloatingPanel = true
         panel.level = .popUpMenu
@@ -123,7 +127,10 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
         // Activate for real: dictation (Wispr Flow) targets the system-wide
         // AX focused element, which requires our app to be active before it
         // sees the input as a text field. We restore the source app on dismiss.
+        // Cooperative activation (macOS 14+) ignores NSApp.activate from a
+        // background app — the NSRunningApplication path still forces it.
         previousApp = NSWorkspace.shared.frontmostApplication
+        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
 

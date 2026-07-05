@@ -378,6 +378,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              y: (NSScreen.main?.frame.height ?? 800) / 2)
         openChat(selection: excerpt, source: nil, app: "TangentBar", at: center)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            NSLog("chatprobe: isActive=%d keyWindow=%d frontmost=%@",
+                  NSApp.isActive ? 1 : 0,
+                  NSApp.keyWindow != nil ? 1 : 0,
+                  NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")
+            // What dictation tools see: the system-wide AX focused element.
+            let focused = Extractor.extractFocused()
+            NSLog("chatprobe: systemwide AX focus → app=%@ role=%@", focused.app, focused.role)
             self?.sendChatTurn("Why perpendicular?")
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
