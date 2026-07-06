@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TangentBar — publish readiness</title>
+<style>
+  :root { --bg:#faf6ec; --card:#ffffff; --ink:#1d2433; --muted:#6d7280; --line:#e3ddcc;
+          --action:#3a4d8f; --ok:#3f7d4e; --caution:#a8730a; --blocker:#a83232; --assume:#6b4d8f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.6 Charter, Georgia, serif; background:var(--bg);
+         color:var(--ink); padding:32px; max-width:940px; margin-inline:auto; }
+  h1 { font:600 26px "Iowan Old Style", Georgia, serif; margin:0 0 4px; }
+  h2 { font:600 17px "Iowan Old Style", Georgia, serif; margin:0 0 10px; }
+  h3 { font:600 14px -apple-system, sans-serif; margin:14px 0 6px; }
+  .sub { color:var(--muted); margin-bottom:24px; font-size:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin-bottom:18px; }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; margin:10px 0; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-family:-apple-system, sans-serif; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  code { font:12.5px ui-monospace, "SF Mono", Menlo, monospace; background:#f1ecdd; border-radius:4px; padding:1px 5px; }
+  .good { color:var(--ok); font-weight:600; } .bad { color:var(--blocker); font-weight:600; } .mid { color:var(--caution); font-weight:600; }
+  .callout { border-left:4px solid var(--assume); background:#f3eef8; padding:12px 14px; border-radius:8px; margin:12px 0; font-size:14px; }
+  .callout.arch { border-color:var(--action); background:#eef1f8; }
+  .callout.caution { border-color:var(--caution); background:#f8f2e4; }
+  .callout.blocker { border-color:var(--blocker); background:#faf1f1; }
+  .callout b { display:block; margin-bottom:4px; font-family:-apple-system, sans-serif; font-size:13px; }
+  ol, ul { padding-left:22px; } li { margin:4px 0; }
+  .term { position:relative; border-bottom:1px dashed var(--assume); cursor:pointer; }
+  .term:hover, .term.open { color:var(--assume); border-bottom-style:solid; }
+  .term > .def { display:none; position:absolute; left:0; top:calc(100% + 8px); z-index:20;
+                 width:max-content; max-width:min(320px,70vw); background:var(--card);
+                 border:1px solid var(--assume); border-radius:8px; padding:10px 12px;
+                 font-size:13px; line-height:1.5; color:var(--ink); white-space:normal;
+                 box-shadow:0 8px 28px rgba(29,36,51,.18); cursor:auto; }
+  .term.open > .def { display:block; }
+  .term > .def b { color:var(--assume); }
+  .decision { border:1.5px solid var(--line); border-radius:10px; padding:14px 16px; margin:14px 0; }
+  .decision.rec { border-color:var(--ok); }
+  .pill { display:inline-block; font:600 11.5px -apple-system, sans-serif; color:var(--ok); border:1px solid var(--ok);
+          border-radius:999px; padding:1px 9px; margin-left:8px; vertical-align:2px; }
+  .opts { display:flex; flex-direction:column; gap:7px; margin:10px 0; font-size:14px; }
+  label.opt { cursor:pointer; }
+  textarea { width:100%; min-height:52px; background:#fbf9f2; color:var(--ink); border:1px solid var(--line);
+             border-radius:8px; padding:8px; font:13.5px -apple-system, sans-serif; resize:vertical; }
+  .note-label { color:var(--muted); font-size:12.5px; margin:8px 0 4px; font-family:-apple-system, sans-serif; }
+  footer { position:sticky; bottom:0; padding:14px 0; background:linear-gradient(transparent, var(--bg) 30%); }
+  button { background:var(--action); color:#fff; border:0; border-radius:8px; padding:10px 18px;
+           font:600 14px -apple-system, sans-serif; cursor:pointer; }
+  pre#out { white-space:pre-wrap; background:#fbf9f2; border:1px solid var(--line); border-radius:8px;
+            padding:14px; margin-top:14px; display:none; font-size:12.5px; }
+  #toast { position:fixed; right:24px; bottom:24px; background:var(--ok); color:#fff; padding:8px 14px;
+           border-radius:8px; opacity:0; transition:opacity .2s; font-family:-apple-system, sans-serif; }
+</style>
+</head>
+<body>
+  <h1>TangentBar — publish readiness</h1>
+  <div class="sub">What stands between today's dev binary and something strangers can download · 2026-07-05</div>
+
+  <section>
+    <h2>Verdict</h2>
+    <p><strong>Not publishable yet — and the gaps are structural, not polish.</strong> The core UX is proven (define, chat, local-first speed), and the privacy story is genuinely strong (everything on-device, network = localhost only). But today TangentBar is a bare terminal binary that assumes a running LM Studio with models already pulled, inherits its Accessibility grant from your shell, and logs every clicked word to the system log. Five stages below, in dependency order.</p>
+    <div class="callout blocker"><b>Ship-blocker found during this review</b>
+      The NSLog diagnostics we added while debugging log <em>every extracted word, selection size, and app name</em> — readable by any process via the unified log. Fine for dogfooding; a privacy leak in a shipped build. Must be gated behind a debug flag before any release.</div>
+    <div class="callout arch"><b>Machine check, just performed</b>
+      Your keychain has one signing identity: <code>"Whorl Dev"</code> — an Apple <em>Development</em> cert, not a <em>Developer&nbsp;ID Application</em> cert. Public distribution outside the App Store requires the latter, which requires Apple Developer Program enrollment ($99/yr, may already exist on the account that issued Whorl Dev). Without it, downloads hit the Gatekeeper wall.</div>
+  </section>
+
+  <section>
+    <h2>Stage 0 — what exists vs. what ships</h2>
+    <table>
+      <tr><th>Area</th><th>Today</th><th></th></tr>
+      <tr><td>Core UX (define, chat, models menu)</td><td>working, dogfooded across cmux/Brave/Zed/Signal/Discord</td><td class="good">ready</td></tr>
+      <tr><td>Packaging</td><td>bare SPM binary, run from a terminal</td><td class="bad">blocker</td></tr>
+      <tr><td>Permissions</td><td>Accessibility inherited from the launching terminal — a real user's grant won't stick without a signed bundle (<span class="term">TCC<span class="def"><b>TCC</b> — macOS's per-app permission database. It keys grants to a bundle's code signature; unsigned/unbundled binaries get flaky, rebuild-breaking grants.</span></span> keys to the signature)</td><td class="bad">blocker</td></tr>
+      <tr><td>Model availability</td><td>assumes LM Studio or Ollama already installed <em>with models pulled</em>; silent claude-CLI fallback most users won't have</td><td class="bad">blocker</td></tr>
+      <tr><td>Onboarding</td><td>none — permission poll-timer, defaults materialized silently</td><td class="bad">blocker</td></tr>
+      <tr><td>Distribution / updates</td><td>none</td><td class="bad">blocker</td></tr>
+      <tr><td>Docs / site</td><td>internal docs are good (ADAPTERS, DECISIONS); nothing public. v1's website (<code>~/Desktop/tangent/website/</code>, Vercel-ready) is reusable</td><td class="mid">gap</td></tr>
+      <tr><td>Privacy hygiene</td><td>NSLog traces leak clicked words; ⌘C synthesis undisclosed</td><td class="bad">blocker</td></tr>
+      <tr><td>App icon</td><td><code>assets/icon@1024.png</code> exists — needs .icns packaging only</td><td class="good">ready</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Stages 1–5, in dependency order</h2>
+    <h3>1 · Bundle + sign + notarize (the foundation — everything else keys off it)</h3>
+    <ul>
+      <li><code>TangentBar.app</code> with Info.plist (<code>LSUIElement</code>, bundle id, icon), built by a small script or SPM plugin.</li>
+      <li>Developer ID cert → <code>codesign --options runtime</code> → <code>notarytool submit</code> → staple. Hardened runtime is mandatory for notarization.</li>
+      <li>This is also what makes the Accessibility grant durable and grantable by normal users.</li>
+    </ul>
+    <h3>2 · Onboarding (your "setup widget") — a 3-step first-run window</h3>
+    <ol>
+      <li><strong>Welcome + Accessibility</strong>: explain why (reads text around your click; never phones home), deep-link straight to the Accessibility pane, live-detect the grant (the poll already exists — give it UI).</li>
+      <li><strong>Model setup</strong> — the step you called out, detection with three states:
+        <ul>
+          <li><span class="good">server + models found</span> → auto-pick (qwen→gemma preference already built), show it, done.</li>
+          <li><span class="mid">server, no models</span> → <strong>pull one in-app with a progress bar</strong>. Ollama's REST API (<code>POST /api/pull</code>) streams download progress — no terminal needed. LM Studio equivalent exists (<code>lms get</code>) but is CLI-side.</li>
+          <li><span class="bad">no server</span> → guided install: "Install Ollama" link (one .dmg, no account), relaunch detection, then the pull step above.</li>
+        </ul>
+      </li>
+      <li><strong>Try it</strong>: a sample paragraph in the window — "double-click any word" — live demo wired to the real pipeline, plus the drag-to-chat gesture.</li>
+    </ol>
+    <div class="callout arch"><b>Architectural call: Ollama as the blessed bootstrap path</b>
+      Supporting detection of both servers stays, but the <em>guided</em> path should bless exactly one (Ollama: single dmg, REST pull API, no login) rather than presenting a chooser to someone who doesn't know what either is. LM Studio users self-serve; the setup widget optimizes for the person with neither. Bundling llama.cpp/MLX in-app would remove the dependency entirely — right call eventually, wrong size for v0.1.</div>
+    <h3>3 · Hardening (small items, all required)</h3>
+    <ul>
+      <li><span class="bad">Gate the NSLog traces</span> behind <code>--debug</code> / a config flag (ship-blocker above).</li>
+      <li>Gate the claude fallback on CLI presence (v1's <code>resolve_model</code> lesson) — for most users the "fallback" should be a clear "model unavailable" state, not a 16 s mystery hang.</li>
+      <li>Settings surface for <code>excludedApps</code> (the Slay-the-Spire lesson) — even just "Exclude frontmost app" in the menu.</li>
+      <li>"Start at Login" via <code>SMAppService</code> + the toggle.</li>
+      <li>3b ⌘C synthesis: restore all pasteboard flavors (TODO already in code), and disclose the mechanism in docs.</li>
+      <li>License + repo visibility decision (below).</li>
+    </ul>
+    <h3>4 · Distribution</h3>
+    <ul>
+      <li>GitHub Releases with the notarized <code>.dmg</code> (or zip) — the canonical "easy download".</li>
+      <li>Homebrew cask (<code>brew install --cask tangentbar</code>) — cheap to add once releases exist.</li>
+      <li>Auto-update via <span class="term">Sparkle<span class="def"><b>Sparkle</b> — the de-facto open-source auto-update framework for non-App-Store Mac apps: the app checks an appcast feed and self-updates with a signed delta.</span></span>, or defer and let Homebrew carry updates for v0.1.</li>
+    </ul>
+    <h3>5 · Docs + site</h3>
+    <ul>
+      <li>README: install, the two gestures, permissions rationale, privacy statement ("your text never leaves the machine — the only network calls are to localhost"), troubleshooting (no pill? → check Accessibility; slow first answer? → model cold load).</li>
+      <li>Public compatibility matrix distilled from ADAPTERS.md (works great / works / not yet: Google Docs, scanned PDFs → the OCR rung is the eventual answer).</li>
+      <li>Reskin v1's website (already Vercel-configured) with the v2 story + download link.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Decisions</h2>
+
+    <div class="decision rec" data-decision="signing">
+      <strong>Signing &amp; notarization path</strong><span class="pill">Recommended</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="sign" value="developer-id" data-field="signing" checked> Get the Developer ID cert (enroll/upgrade the Apple account behind "Whorl Dev") — notarized DMG, zero Gatekeeper friction</label>
+        <label class="opt"><input type="radio" name="sign" value="adhoc-brew" data-field="signing"> Ship unsigned via Homebrew only (cask handles quarantine) — $0 but excludes non-terminal users, which defeats "publishable"</label>
+        <label class="opt"><input type="radio" name="sign" value="defer" data-field="signing"> Not ready to publish broadly — polish for friends-with-terminals first</label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="signing" placeholder='e.g. "I already have a paid account under X"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="model_bootstrap">
+      <strong>Model bootstrap for users with nothing installed</strong><span class="pill">Recommended</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="boot" value="ollama-guided" data-field="model_bootstrap" checked> Bless Ollama: guided install + in-app model pull with progress (detection still covers LM Studio for those who have it)</label>
+        <label class="opt"><input type="radio" name="boot" value="detect-only" data-field="model_bootstrap"> Detect-only: point users at Ollama/LM Studio docs, no in-app pull — simpler, but the empty-machine user bounces</label>
+        <label class="opt"><input type="radio" name="boot" value="embedded" data-field="model_bootstrap"> Embed inference (llama.cpp/MLX) so there's no dependency at all — best UX, biggest lift, pushes the release out</label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="model_bootstrap" placeholder='e.g. "guided Ollama, but embed later"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="updates">
+      <strong>Auto-updates in v0.1</strong><span class="pill">Recommended</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="upd" value="defer-brew" data-field="updates" checked> Defer Sparkle; GitHub Releases + Homebrew carry updates for v0.1</label>
+        <label class="opt"><input type="radio" name="upd" value="sparkle-now" data-field="updates"> Wire Sparkle now — right call if you expect rapid post-launch iteration reaching non-brew users</label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="updates" placeholder=""></textarea>
+    </div>
+
+    <div class="decision" data-decision="source">
+      <strong>Repo visibility &amp; license</strong>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="src" value="open" data-field="source" checked> Open source (MIT/Apache-2) — fits the privacy story ("audit it yourself"), invites adapter contributions</label>
+        <label class="opt"><input type="radio" name="src" value="closed" data-field="source"> Closed source, free binary</label>
+        <label class="opt"><input type="radio" name="src" value="undecided" data-field="source"> Park it — decide at launch</label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="source" placeholder=""></textarea>
+    </div>
+  </section>
+
+  <section>
+    <h2>Anything else</h2>
+    <textarea data-note="catchall" placeholder="Cross-cutting: launch timing, naming (TangentBar vs Tangent), pricing-someday, what v0.1 must NOT include…"></textarea>
+  </section>
+
+  <footer><button onclick="exportJSON()">Export JSON</button></footer>
+  <pre id="out"></pre>
+  <div id="toast">Copied</div>
+
+<script>
+document.addEventListener('click', (e) => {
+  const term = e.target.closest('.term');
+  document.querySelectorAll('.term.open').forEach(t => { if (t !== term) t.classList.remove('open'); });
+  if (term && !e.target.closest('.def')) term.classList.toggle('open');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.term.open').forEach(t => t.classList.remove('open'));
+});
+function exportJSON() {
+  const data = { exportedAt: new Date().toISOString(), decisions:{}, notes:{} };
+  document.querySelectorAll('[data-decision]').forEach(d => {
+    const sel = d.querySelector('[data-field]:checked');
+    data.decisions[d.dataset.decision] = sel ? sel.value : null;
+  });
+  document.querySelectorAll('[data-note]').forEach(t => { data.notes[t.dataset.note] = t.value; });
+  const json = JSON.stringify(data, null, 2);
+  const out = document.getElementById('out');
+  out.textContent = json; out.style.display = 'block'; out.scrollIntoView({behavior:'smooth'});
+  const done = () => { const t = document.getElementById('toast'); t.style.opacity = 1; setTimeout(()=>t.style.opacity=0, 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(json).then(done, () => { console.log(json); alert('Clipboard blocked — JSON shown below and logged.'); });
+  else { console.log(json); alert('Clipboard unavailable — JSON shown below and logged.'); }
+}
+</script>
+</body>
+</html>
