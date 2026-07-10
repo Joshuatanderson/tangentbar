@@ -176,6 +176,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                               reply += chunk
                               self?.chatPanel.appendAssistant(chunk)
                           },
+                          onStatus: { [weak self] status in
+                              self?.chatPanel.setStatus(status)
+                              // The configured local server just failed; adopt
+                              // whichever local server is alive for next time.
+                              self?.refreshLocalModels(autoSelect: true)
+                          },
                           onDone: { [weak self] status in
                               guard let self else { return }
                               if !reply.isEmpty {
@@ -202,6 +208,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                      NSLog("first chunk received")
                                  }
                                  self?.panel.append(chunk)
+                             },
+                             onStatus: { [weak self] status in
+                                 self?.panel.setStatus(status)
+                                 // The configured local server just failed; adopt
+                                 // whichever local server is alive for next time.
+                                 self?.refreshLocalModels(autoSelect: true)
                              },
                              onDone: { [weak self] status in
                                  NSLog("stream done: %@", status)

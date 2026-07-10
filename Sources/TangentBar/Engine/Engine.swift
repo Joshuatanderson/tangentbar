@@ -71,10 +71,11 @@ final class Engine {
 
     func streamTangent(word: String, context: String, config: Config,
                        onChunk: @escaping (String) -> Void,
+                       onStatus: ((String) -> Void)? = nil,
                        onDone: @escaping (String) -> Void) {
         stream(system: nil, user: Engine.tangentPrompt(word: word, context: context),
                maxTokens: 300, model: config.tangentModel, baseURL: config.localBaseURL,
-               config: config, onChunk: onChunk, onDone: onDone)
+               config: config, onChunk: onChunk, onStatus: onStatus, onDone: onDone)
     }
 
     /// A selection-chat turn (v1 explore semantics): constant system framing +
@@ -82,16 +83,18 @@ final class Engine {
     /// model — definitions want tiny-and-instant, conversations want smarter.
     func streamChat(excerpt: String, history: [Excerpt.Turn], config: Config,
                     onChunk: @escaping (String) -> Void,
+                    onStatus: ((String) -> Void)? = nil,
                     onDone: @escaping (String) -> Void) {
         stream(system: Excerpt.system,
                user: Excerpt.prompt(excerpt: excerpt, history: history),
                maxTokens: 700, model: config.resolvedChatModel, baseURL: config.resolvedChatBaseURL,
-               config: config, onChunk: onChunk, onDone: onDone)
+               config: config, onChunk: onChunk, onStatus: onStatus, onDone: onDone)
     }
 
     private func stream(system: String?, user: String, maxTokens: Int,
                         model: String, baseURL: String, config: Config,
                         onChunk: @escaping (String) -> Void,
+                        onStatus: ((String) -> Void)?,
                         onDone: @escaping (String) -> Void) {
         cancel()
         cancelled = false  // cancel() above was housekeeping, not a user dismissal
@@ -113,8 +116,10 @@ final class Engine {
                 // A user dismissal also lands here (cancel kills the stream
                 // before data) — don't burn a claude call on a closed panel.
                 guard let self, !self.cancelled else { return }
-                // Local server down or empty — fall back to claude.
-                onChunk("")
+                // Local server down or empty — fall back to claude. Say so:
+                // claude takes ~16 s and a silent panel reads as a hang.
+                NSLog("local model gave nothing (%@ @ %@) — claude fallback", model, baseURL)
+                onStatus?("\(model) unreachable — asking claude (\(config.claudeModel))…")
                 self.streamViaClaude(prompt: flatPrompt, model: config.claudeModel,
                                      onChunk: onChunk, onDone: onDone)
             } else {

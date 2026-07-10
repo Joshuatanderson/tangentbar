@@ -53,6 +53,13 @@ enum Extractor {
         guard let value = value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var range = CFRange()
         guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+        // Apps report junk ranges — location can be NSNotFound (Int.max), and
+        // adding contextRadius to that traps with arithmetic overflow (crashed
+        // the app twice from a double-click). Reject anything a real text
+        // buffer couldn't hold.
+        let maxSane = 100_000_000
+        guard range.location >= 0, range.length >= 0,
+              range.location < maxSane, range.length < maxSane else { return nil }
         return range
     }
 
