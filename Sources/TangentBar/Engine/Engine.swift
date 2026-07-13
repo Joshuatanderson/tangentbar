@@ -97,7 +97,7 @@ final class Engine {
                        onDone: @escaping (String) -> Void) {
         stream(system: nil, user: Engine.tangentPrompt(word: word, context: context),
                maxTokens: 300, model: config.tangentModel, baseURL: config.localBaseURL,
-               claudeModel: config.claudeModel,
+               claudeModel: config.claudeModel, timeout: 20,
                config: config, onChunk: onChunk, onStatus: onStatus, onDone: onDone)
     }
 
@@ -111,12 +111,14 @@ final class Engine {
         stream(system: Excerpt.system,
                user: Excerpt.prompt(excerpt: excerpt, history: history),
                maxTokens: 700, model: config.resolvedChatModel, baseURL: config.resolvedChatBaseURL,
-               claudeModel: config.claudeChatModel,
+               // Chat models are bigger and may take >20 s to first token.
+               claudeModel: config.claudeChatModel, timeout: 60,
                config: config, onChunk: onChunk, onStatus: onStatus, onDone: onDone)
     }
 
     private func stream(system: String?, user: String, maxTokens: Int,
-                        model: String, baseURL: String, claudeModel: String, config: Config,
+                        model: String, baseURL: String, claudeModel: String,
+                        timeout: TimeInterval, config: Config,
                         onChunk: @escaping (String) -> Void,
                         onStatus: ((String) -> Void)?,
                         onDone: @escaping (String) -> Void) {
@@ -133,10 +135,16 @@ final class Engine {
             streamViaClaude(prompt: flatPrompt, model: claudeModel, onChunk: onChunk, onDone: onDone)
             return
         }
-        let stream = SSEStream(onChunk: onChunk) { [weak self] ok, receivedAny in
-            if ok && receivedAny {
+        let stream = SSEStream(timeout: timeout, onChunk: onChunk) { [weak self] ok, gotVisible, gotRaw in
+            if ok && gotVisible {
                 onDone("done · \(model)")
-            } else if !receivedAny {
+            } else if gotRaw && !gotVisible {
+                // The server DID answer — the model just burned its whole
+                // budget inside <think>. A claude fallback would be a lie
+                // ("unreachable") and a 16 s wait; say what happened instead.
+                onChunk("(the model spent its entire answer thinking — try again, or pick a different model from the menu)")
+                onDone("only reasoning · \(model)")
+            } else if !gotRaw {
                 // A user dismissal also lands here (cancel kills the stream
                 // before data) — don't burn a claude call on a closed panel.
                 guard let self, !self.cancelled else { return }

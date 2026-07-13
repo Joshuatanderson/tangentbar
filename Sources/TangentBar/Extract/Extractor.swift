@@ -381,10 +381,17 @@ enum Extractor {
     // MARK: Rung 3b
 
     /// Synthesize ⌘C at the clicked app, read the pasteboard, restore it.
-    /// TODO(engine): restore all pasteboard flavors, not just plain string.
+    /// The snapshot keeps EVERY flavor — restoring only the string flavor
+    /// would silently destroy an image or file the user had copied.
     private static func clipboardRescue(pid: pid_t) -> String? {
         let pb = NSPasteboard.general
-        let saved = pb.string(forType: .string)
+        let saved: [NSPasteboardItem] = (pb.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) { copy.setData(data, forType: type) }
+            }
+            return copy
+        }
 
         func attempt(_ post: (CGEvent, CGEvent) -> Void) -> String? {
             let before = pb.changeCount
@@ -405,7 +412,7 @@ enum Extractor {
         }
         if copied != nil {
             pb.clearContents()
-            if let saved = saved { pb.setString(saved, forType: .string) }
+            if !saved.isEmpty { pb.writeObjects(saved) }
         }
         return copied
     }

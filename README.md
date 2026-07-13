@@ -6,6 +6,8 @@
 
 Reading is full of tiny tangents: a word you half-know, jargon from someone else's field, a term that means something different in this context. TangentBar makes the tangent cost nothing — a double-click opens a small card at your cursor with a context-aware definition, streamed from a local model in a fraction of a second. Click anywhere and it's gone.
 
+<p align="center"><img src="assets/screenshot.png" width="440" alt="The definition panel"></p>
+
 Two gestures:
 
 - **Double-click a word** → a definition card, grounded in the surrounding passage it extracted from the app you're reading.

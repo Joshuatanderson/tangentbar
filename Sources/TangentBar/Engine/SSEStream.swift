@@ -8,19 +8,27 @@ import Foundation
 final class SSEStream: NSObject, URLSessionDataDelegate {
     private var buffer = Data()
     private let onChunk: (String) -> Void
-    private let onDone: (Bool, Bool) -> Void  // (success, receivedAnything)
+    /// (success, visible text delivered, ANY content received). The third flag
+    /// separates "server gave nothing → fall back" from "model spent its whole
+    /// budget inside <think> → the server answered, don't burn a fallback".
+    private let onDone: (Bool, Bool, Bool) -> Void
     private var session: URLSession!
     private var task: URLSessionDataTask?
-    private var receivedAny = false
+    private var receivedVisible = false
+    private var receivedRaw = false
     private var insideThink = false
     private var carry = ""  // partial tag straddling a chunk boundary
 
-    init(onChunk: @escaping (String) -> Void, onDone: @escaping (Bool, Bool) -> Void) {
+    /// `timeout` is URLSession's idle (between-bytes) timeout: 20 s suits a
+    /// prewarmed define model; chats on big models may think longer to first
+    /// token, so callers can widen it.
+    init(timeout: TimeInterval = 20,
+         onChunk: @escaping (String) -> Void, onDone: @escaping (Bool, Bool, Bool) -> Void) {
         self.onChunk = onChunk
         self.onDone = onDone
         super.init()
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForRequest = timeout
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }
 
@@ -51,9 +59,10 @@ final class SSEStream: NSObject, URLSessionDataDelegate {
                   let choices = obj["choices"] as? [[String: Any]],
                   let delta = choices.first?["delta"] as? [String: Any],
                   let content = delta["content"] as? String, !content.isEmpty else { continue }
+            receivedRaw = true
             let visible = filterThink(content)
             guard !visible.isEmpty else { continue }
-            receivedAny = true
+            receivedVisible = true
             DispatchQueue.main.async { self.onChunk(visible) }
         }
     }
@@ -65,12 +74,13 @@ final class SSEStream: NSObject, URLSessionDataDelegate {
         if !insideThink, !carry.isEmpty {
             let tail = carry
             carry = ""
-            receivedAny = true
+            receivedVisible = true
             DispatchQueue.main.async { self.onChunk(tail) }
         }
         let ok = error == nil
-        let got = receivedAny
-        DispatchQueue.main.async { self.onDone(ok, got) }
+        let visible = receivedVisible
+        let raw = receivedRaw
+        DispatchQueue.main.async { self.onDone(ok, visible, raw) }
     }
 
     /// Stateful strip of <think>…</think>; tolerates tags split across chunks.

@@ -13,6 +13,9 @@ final class EventTap {
     /// A drag ended after covering real distance — likely a text selection.
     /// (mouse-up point, pasteboard changeCount at mouse-down)
     var onDragSelect: ((CGPoint, Int) -> Void)?
+    /// A third click landed — the "double-click" was really a triple-click
+    /// (select-paragraph); whoever is holding a pending action should drop it.
+    var onTripleClick: (() -> Void)?
     private var tap: CFMachPort?
     private var downLocation = CGPoint.zero
     private var pbCountAtDown = 0
@@ -28,6 +31,9 @@ final class EventTap {
                 return Unmanaged.passUnretained(event)
             }
             if type == .leftMouseDown {
+                if event.getIntegerValueField(.mouseEventClickState) >= 3 {
+                    DispatchQueue.main.async { me.onTripleClick?() }
+                }
                 me.downLocation = event.location
                 // Pasteboard reads are XPC to pboardd — too slow for the tap
                 // callback's latency budget (the OS disables laggy taps).
@@ -38,6 +44,11 @@ final class EventTap {
             }
             if type == .leftMouseUp, event.getIntegerValueField(.mouseEventClickState) == 2 {
                 let location = event.location
+                // Double-click-drag (select by words) is a selection gesture,
+                // not a define: real travel since the second down → suppress.
+                let dx = location.x - me.downLocation.x
+                let dy = location.y - me.downLocation.y
+                if dx * dx + dy * dy > 64 { return Unmanaged.passUnretained(event) }
                 let flags = event.flags
                 // Snapshot now: copy-on-select apps (ghostty) write the pasteboard
                 // as part of the selection this click just made.

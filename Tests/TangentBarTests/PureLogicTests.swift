@@ -7,7 +7,7 @@ import XCTest
 
 final class FilterThinkTests: XCTestCase {
     private func makeStream() -> SSEStream {
-        SSEStream(onChunk: { _ in }, onDone: { _, _ in })
+        SSEStream(onChunk: { _ in }, onDone: { _, _, _ in })
     }
 
     func testPassesPlainText() {
@@ -35,6 +35,14 @@ final class FilterThinkTests: XCTestCase {
         let first = s.filterThink("x <")
         let second = s.filterThink(" y is true")
         XCTAssertEqual(first + second, "x < y is true")
+    }
+
+    /// A response that is ALL reasoning yields no visible text — the engine
+    /// must be able to tell that apart from "server never answered".
+    func testThinkOnlyResponseYieldsNothingVisible() {
+        let s = makeStream()
+        XCTAssertEqual(s.filterThink("<think>all budget spent here"), "")
+        XCTAssertEqual(s.filterThink(" and here too"), "")
     }
 }
 

@@ -26,6 +26,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Badge state: "!" while either problem stands.
     private var axProblem = false
     private var noModels = false
+    /// A define waiting out the triple-click window; a third click cancels it.
+    private var pendingOpen: DispatchWorkItem?
     private let extractQueue = DispatchQueue(label: "tangent.extract", qos: .userInitiated)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -67,6 +69,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             runSelfTest()
             return
         }
+        if CommandLine.arguments.contains("--demo") {
+            // The canned panel, held open for screenshots; auto-exits.
+            let center = CGPoint(x: (NSScreen.main?.frame.width ?? 1200) / 2,
+                                 y: (NSScreen.main?.frame.height ?? 800) / 2)
+            panel.present(word: "tangent", sourceApp: "TangentBar", model: config.tangentModel, atCG: center) {}
+            panel.append("A line that touches a curve at a single point without crossing it; figuratively, a sudden divergence from the main subject — *exactly* the kind this app exists to indulge.")
+            panel.setStatus("done · \(config.tangentModel) — click outside to dismiss")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { NSApp.terminate(nil) }
+            return
+        }
 
         guard ensureTrusted() else { return }
         armTap()
@@ -99,6 +111,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         eventTap.onDragSelect = { [weak self] location, pbCountAtDown in
             self?.handleDragSelect(at: location, pbCountAtDown: pbCountAtDown)
         }
+        eventTap.onTripleClick = { [weak self] in
+            self?.pendingOpen?.cancel()
+            self?.pendingOpen = nil
+        }
         if !eventTap.start() {
             axProblem = true
             updateBadge()
@@ -127,6 +143,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSLog("double-click at (%.0f, %.0f) alt=%d", location.x, location.y, alt ? 1 : 0)
         let allowClipboard = config.clipboardFallback
         let excluded = config.excludedApps
+        // Extraction starts NOW; presenting waits out the triple-click window
+        // below, so a select-paragraph doesn't flash a spurious definition.
+        let clickTime = DispatchTime.now()
         extractQueue.async { [weak self] in
             let extraction = Extractor.forDoubleClick(at: location,
                                                       pbCountAtClick: pbCountAtClick,
@@ -142,13 +161,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 // Default: double-click just defines. The pill interposes only
                 // when configured; ⌥ always bypasses it.
-                if self.config.usePill && !alt {
-                    self.pill.show(word: word, atCG: location, timeout: self.config.pillTimeout) {
+                let work = DispatchWorkItem {
+                    if self.config.usePill && !alt {
+                        self.pill.show(word: word, atCG: location, timeout: self.config.pillTimeout) {
+                            self.openTangent(extraction, word: word, at: location)
+                        }
+                    } else {
                         self.openTangent(extraction, word: word, at: location)
                     }
-                } else {
-                    self.openTangent(extraction, word: word, at: location)
                 }
+                self.pendingOpen?.cancel()
+                self.pendingOpen = work
+                // Extraction usually outlasts the window, so this rarely adds
+                // real latency — it only refuses to present before it closes.
+                let tripleWindow = clickTime + .milliseconds(280)
+                DispatchQueue.main.asyncAfter(deadline: max(tripleWindow, .now()), execute: work)
             }
         }
     }
