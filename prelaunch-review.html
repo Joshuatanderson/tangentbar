@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TangentBar — pre-launch review</title>
+<style>
+  :root {
+    --paper:#faf6ec; --card:#fffdf6; --ink:#1d2433; --muted:#6d7280; --line:#e3dcc9;
+    --accent:#3a4d8f;          /* primary action */
+    --ok:#2e7d4f;              /* recommendation / positive */
+    --caution:#a06a10;         /* non-blocking concern */
+    --blocker:#b3382e;         /* blocker / bug */
+    --assume:#7a4d8f;          /* assumption / judgment call */
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.55 -apple-system,Segoe UI,Roboto,sans-serif; background:var(--paper);
+         color:var(--ink); padding:32px 24px 60px; max-width:960px; margin-inline:auto; }
+  h1 { font-family:"Iowan Old Style",Georgia,serif; font-size:26px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin-bottom:24px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:18px; }
+  h2 { font-family:"Iowan Old Style",Georgia,serif; font-size:18px; margin:0 0 10px; }
+  h3 { font-size:14px; margin:16px 0 6px; }
+  p { margin:8px 0; }
+  code { background:#f1ecdd; border:1px solid var(--line); border-radius:4px; padding:1px 5px; font-size:13px; }
+  pre { background:#f1ecdd; border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin:10px 0; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:12.5px; text-transform:uppercase; letter-spacing:.04em;
+       border-bottom:2px solid var(--line); padding:6px 8px; }
+  td { border-bottom:1px solid var(--line); padding:8px; vertical-align:top; }
+  .sev { display:inline-block; font-size:11.5px; font-weight:700; border-radius:999px; padding:1px 9px; white-space:nowrap; }
+  .sev.p1 { color:#fff; background:var(--blocker); }
+  .sev.p2 { color:#fff; background:var(--caution); }
+  .sev.p3 { color:var(--muted); border:1px solid var(--muted); }
+  .sev.fixed { color:#fff; background:var(--ok); }
+  .badge-ok { display:inline-block; font-size:11.5px; font-weight:700; border-radius:999px; padding:1px 9px; color:#fff; background:var(--ok); }
+  .callout { border-left:4px solid var(--assume); background:#f4eef8; padding:12px 14px; border-radius:8px; margin:12px 0; }
+  .callout.arch { border-color:var(--accent); background:#eef1f8; }
+  .callout.caution { border-color:var(--caution); background:#f8f2e4; }
+  .callout.blocker { border-color:var(--blocker); background:#f9ece9; }
+  .callout b { display:block; margin-bottom:4px; }
+  .term { position:relative; border-bottom:1px dashed var(--assume); cursor:pointer; }
+  .term:hover, .term.open { color:var(--assume); border-bottom-style:solid; }
+  .term > .def { display:none; position:absolute; left:0; top:calc(100% + 8px); z-index:20;
+                 width:max-content; max-width:min(340px,70vw); background:var(--card);
+                 border:1px solid var(--assume); border-radius:8px; padding:10px 12px;
+                 font-size:13px; line-height:1.5; font-weight:400; color:var(--ink);
+                 white-space:normal; box-shadow:0 8px 28px rgba(29,36,51,.18); cursor:auto; }
+  .term.open > .def { display:block; }
+  .term > .def b { color:var(--assume); }
+  .decision { border:1px solid var(--line); border-radius:10px; padding:14px; margin:14px 0; background:#fffef9; }
+  .decision.rec { border-color:var(--ok); box-shadow:0 0 0 1px var(--ok) inset; }
+  .pill { display:inline-block; font-size:12px; color:var(--ok); border:1px solid var(--ok);
+          border-radius:999px; padding:1px 8px; margin-left:8px; }
+  .opts { display:flex; flex-direction:column; gap:6px; margin:10px 0; }
+  .opts.row { flex-direction:row; flex-wrap:wrap; gap:16px; }
+  label.opt { cursor:pointer; display:flex; gap:8px; align-items:baseline; }
+  label.opt .why { color:var(--muted); font-size:13px; }
+  textarea { width:100%; min-height:48px; background:#fffef9; color:var(--ink); border:1px solid var(--line);
+             border-radius:8px; padding:8px; font:inherit; font-size:13.5px; resize:vertical; }
+  .note-label { color:var(--muted); font-size:12.5px; margin:10px 0 4px; }
+  footer { position:sticky; bottom:0; padding:14px 0; background:linear-gradient(transparent, var(--paper) 30%); }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 18px; font:inherit; cursor:pointer; }
+  pre#out { white-space:pre-wrap; display:none; }
+  #toast { position:fixed; right:24px; bottom:24px; background:var(--ok); color:#fff; padding:8px 14px;
+           border-radius:8px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px 24px; }
+  ul { margin:6px 0; padding-left:22px; } li { margin:3px 0; }
+  .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+  <h1>TangentBar — pre-launch review</h1>
+  <div class="sub">Full code + UX review of the 2,037-line Swift app, and the decisions that gate the GitHub release · 2026-07-12</div>
+
+  <section>
+    <h2>Update — evening session, 2026-07-12</h2>
+    <div class="callout arch"><b>Done since the review above was written</b>
+      All three P1 bugs are <strong>fixed and building clean</strong> (secure-subrole suppression, stderr drain on the claude fallback, carry flush in <code>SSEStream</code>). The <strong>curl-installer path is built and tested locally</strong>: <code>scripts/build-app.sh</code> assembles, signs, and zips <code>TangentBar.app</code> (selftest passes from the bundle), and <code>install.sh</code> at the repo root is the <code>curl | sh</code> target. Still open before publish: word-log gating, the no-model first-run state, version in the menu, README + LICENSE, and creating the GitHub repo — see the rescoped D2.</div>
+  </section>
+
+  <section>
+    <h2>Verdict</h2>
+    <p><strong>The codebase is in genuinely good shape</strong> — clean build with zero warnings, a disciplined four-layer architecture (sensor → extract → surface → engine), and hard-won platform knowledge captured as comments where it matters. Nothing structural needs to change before publishing.</p>
+    <p><strong>What stands between here and a downloadable GitHub release is about 1½–2 focused days:</strong> four release blockers (word-logging, app bundle, the no-model first-run state, README/LICENSE), plus three P1 bugs found in this review that are cheap to fix and embarrassing to ship — a password-field privacy gap, a pipe deadlock that can hang the panel forever, and a stream bug that truncates output.</p>
+    <div class="callout arch"><b>Framing choice</b>
+      Your ask — "downloadable even with simple warnings" — maps to the <em>free path</em> from the Jul 10 distribution doc: no $99 Apple Developer Program, ad-hoc signed. One honest correction to "simple warnings": since macOS 15, a plain-zip download of an ad-hoc app shows <em>"damaged and can't be opened"</em> with <em>no</em> Open&nbsp;Anyway button — that's a wall, not a warning. The <code>curl | sh</code> installer avoids the <span class="term">quarantine attribute<span class="def"><b>Quarantine attribute</b> — an extended file attribute browsers stamp on downloads. Gatekeeper only inspects files carrying it; <code>curl</code> doesn't set it, so script installs never hit the Gatekeeper dialog at all.</span></span> entirely, so it opens clean. Decision D1 below.</div>
+  </section>
+
+  <section>
+    <h2>State of the codebase</h2>
+    <table>
+      <tr><th>Area</th><th>Assessment</th></tr>
+      <tr><td><strong>Architecture</strong></td><td><span class="badge-ok">strong</span> Layer boundaries are real: <code>EventTap</code> only filters and forwards, <code>Extractor</code> is UI-free, <code>Engine</code> has no AppKit imports. The D1 "engine seam" discipline held.</td></tr>
+      <tr><td><strong>Comments / docs</strong></td><td><span class="badge-ok">strong</span> Comments explain constraints, not mechanics (why pasteboard reads can't run in the tap callback, why the chat panel must truly activate). <code>DECISIONS.md</code> + <code>ADAPTERS.md</code> are better internal docs than most shipped apps have.</td></tr>
+      <tr><td><strong>Build health</strong></td><td><span class="badge-ok">clean</span> <code>swift build</code>: zero errors, zero warnings. Your "even if there are simple warnings" allowance isn't needed on the build side — the warnings are only Gatekeeper-side.</td></tr>
+      <tr><td><strong>Tests</strong></td><td><span class="sev p2">gap</span> Zero tests, no test target. Several pure functions (<code>filterThink</code>, <code>tangentPrompt</code>, <code>Excerpt</code>, <code>cleanWord</code>, <code>wordAround</code>) are trivially testable — and one of the bugs below lives in exactly such a function. Decision D6.</td></tr>
+      <tr><td><strong>Error handling</strong></td><td><span class="sev p3">adequate</span> Silent <code>try?</code> on config save/load is a reasonable call for a menu-bar utility; the streaming paths surface failures honestly in the status line.</td></tr>
+      <tr><td><strong>Repo hygiene</strong></td><td><span class="sev p3">one item</span> <code>distribution-decisions.html</code> is untracked — commit it before publishing. <code>.gitignore</code> already excludes <code>.hippo/</code> and build products. Git history (17 commits) is clean and presentable.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Bugs found in this review</h2>
+    <p class="muted">Severity: P1 = fix before publishing · P2 = fix soon, not gating · P3 = known/acceptable, document it.</p>
+    <table>
+      <tr><th style="width:52px">Sev</th><th>Bug</th><th style="width:220px">Where</th></tr>
+      <tr>
+        <td><span class="sev fixed">FIXED</span></td>
+        <td><strong>Web password fields aren't suppressed.</strong> The secure-field bail checks <code>role == "AXSecureTextField"</code> only. Browsers expose password inputs as <code>AXTextField</code> with <em>subrole</em> <code>AXSecureTextField</code> — so a double-click on a browser password field can run the full ladder, including the ⌘C-synthesis rung, and (today) log the result. Check <code>AXSubrole</code> too, at every bail site.</td>
+        <td><code>Extractor.swift:106‑109, 275, 335</code></td>
+      </tr>
+      <tr>
+        <td><span class="sev fixed">FIXED</span></td>
+        <td><strong>Unread stderr pipes can deadlock the claude fallback.</strong> <code>process.standardError = Pipe()</code> with no reader: if <code>claude</code> writes more than the ~64&nbsp;KB pipe buffer to stderr (auth errors, verbose failures), the process wedges and <code>terminationHandler</code> never fires — the panel hangs on "asking claude…" forever. Same pattern in <code>TerminalContext.run</code> (mitigated there by the 1.5&nbsp;s kill, but the stderr data is still lost for diagnosis). Drain or null-device stderr.</td>
+        <td><code>Engine.swift:147</code> · <code>TerminalContext.swift:39</code></td>
+      </tr>
+      <tr>
+        <td><span class="sev fixed">FIXED</span></td>
+        <td><strong><code>filterThink</code> drops held-back text at stream end.</strong> To tolerate <code>&lt;think&gt;</code> tags split across chunks, up to 8 trailing chars after a <code>&lt;</code> are held in <code>carry</code> — but nothing flushes <code>carry</code> when the stream completes. Any answer whose final characters include a <code>&lt;</code> (math, code, HTML in a definition) gets silently truncated. Flush <code>carry</code> in <code>didCompleteWithError</code>.</td>
+        <td><code>SSEStream.swift:61‑65, 86‑89</code></td>
+      </tr>
+      <tr>
+        <td><span class="sev p2">P2</span></td>
+        <td><strong>Clipboard rescue can destroy a non-text clipboard.</strong> Rung 3b saves only the <em>string</em> flavor before synthesizing ⌘C. If the user's clipboard held an image or file, restore writes nothing back — their clipboard is silently wiped. The TODO is already in the code; fix is to snapshot all <code>pasteboardItems</code> flavors. Also worth a one-line disclosure in the README (clipboard managers will record the synthetic copy).</td>
+        <td><code>Extractor.swift:369‑396</code></td>
+      </tr>
+      <tr>
+        <td><span class="sev p2">P2</span></td>
+        <td><strong>Triple-click and double-click-drag both fire a define.</strong> The trigger is <code>mouseUp</code> with <code>clickState == 2</code>, which also matches the second click of a triple-click (select-paragraph) and the end of a double-click-drag (select-by-words). Users who triple-click to select a line get a surprise definition panel. Cheap partial fix: ignore when the up-point traveled &gt;8&nbsp;px from down (drag case); the triple-click case needs a ~250&nbsp;ms defer to see if a third click lands.</td>
+        <td><code>EventTap.swift:39</code></td>
+      </tr>
+      <tr>
+        <td><span class="sev p2">P2</span></td>
+        <td><strong>A pure-reasoning response triggers a spurious claude fallback.</strong> <code>receivedAny</code> is only set when <em>visible</em> text survives think-stripping — a response that's all <code>&lt;think&gt;</code> (small models sometimes burn the whole token budget thinking) reads as "server gave nothing" and silently burns a 16&nbsp;s claude call. Track raw-chunks-received separately from visible-chunks.</td>
+        <td><code>SSEStream.swift:53‑57</code> · <code>Engine.swift:117‑124</code></td>
+      </tr>
+      <tr>
+        <td><span class="sev p3">P3</span></td>
+        <td><strong>20&nbsp;s idle timeout can kill slow local models.</strong> <code>timeoutIntervalForRequest = 20</code> is an <em>idle</em> timeout — a big model that takes &gt;20&nbsp;s to first token gets cancelled → fallback, even though the server was fine. Unlikely with your models (think-tokens keep the stream alive); worth a comment and maybe 60&nbsp;s for the chat path where users pick bigger models.</td>
+        <td><code>SSEStream.swift:23</code></td>
+      </tr>
+      <tr>
+        <td><span class="sev p3">P3</span></td>
+        <td><strong>The Chromium nudge retry costs 150&nbsp;ms on every textless click, in every app.</strong> <code>extract(at:)</code> retries once after <code>usleep(150_000)</code> even for apps that were never Chromium. Acceptable latency tax for v0; gate on bundle-id prefix if it ever bothers you.</td>
+        <td><code>Extractor.swift:312‑316</code></td>
+      </tr>
+    </table>
+    <div class="callout caution"><b>The standing ship-blocker is still open</b>
+      <code>AppController.swift:109</code> and <code>:201</code> log every extracted <em>word</em> (and app name) via <code>NSLog</code> — readable by any process in the unified log. Flagged in both prior reviews; must be gated behind a <code>--debug</code> flag (or migrated to <code>os.Logger</code> with <code>%{private}</code> redaction) before anything ships. The other NSLog sites only log coordinates, ladder names, and character counts — those are fine to keep.</div>
+  </section>
+
+  <section>
+    <h2>Code quality opportunities (non-gating)</h2>
+    <ul>
+      <li><strong>Rename <code>provider = "lmstudio"</code> → <code>"local"</code>.</strong> It actually means "any local OpenAI-compatible server" — Ollama rides the same path. The misnomer will confuse the first outside contributor. One-line config migration: treat <code>"lmstudio"</code> as <code>"local"</code> on load.</li>
+      <li><strong><code>ModelDiscovery.server</code> names by port-sniffing</strong> (<code>:11434</code> → "Ollama") — a custom base URL on another port shows as "LM Studio". Cosmetic.</li>
+      <li><strong>Chat model is never prewarmed.</strong> <code>prewarm</code> pings only <code>tangentModel</code>; picking a separate (bigger) chat model means the first chat turn eats the ~7.6&nbsp;s cold JIT load. Ping the chat model too when it's set.</li>
+      <li><strong><code>Excerpt.focus</code> pads around the <em>first</em> occurrence</strong> of the selection in the source; repeated phrases can pad the wrong instance. Rare; noting for the record.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>UX opportunities</h2>
+    <p>These are ranked by leverage-per-effort. None gate the release — decision D7 lets you pick which ride along.</p>
+    <table>
+      <tr><th>Idea</th><th>Why it matters</th><th style="width:80px">Effort</th></tr>
+      <tr><td><strong>Markdown rendering in panels</strong></td><td>Models emit <code>**bold**</code> and lists; today they render as literal asterisks. <code>AttributedString(markdown:)</code> is native and D4 already anticipated the heading-mapping work. Single biggest polish win.</td><td>½ day</td></tr>
+      <tr><td><strong>Define → chat bridge</strong></td><td>A small "ask more ⌁" affordance on the tangent panel opening the chat seeded with word + context. Connects your two flows; today a definition is a dead end.</td><td>2–3 h</td></tr>
+      <tr><td><strong>Accessibility-needed guidance</strong></td><td>Today an ungranted user sees a bare "!" badge and silence. Add a menu item ("Accessibility permission needed — open Settings…") that deep-links the pane. Pairs with the no-model state in the release work.</td><td>1 h</td></tr>
+      <tr><td><strong>"Exclude this app" menu item</strong></td><td><code>excludedApps</code> exists but is hand-edit-only JSON. One menu item that adds the frontmost app closes the Slay-the-Spire class of problem for real users.</td><td>1 h</td></tr>
+      <tr><td><strong>Launch at Login</strong></td><td><code>SMAppService.mainApp.register()</code> + a menu toggle. Table stakes for a menu-bar utility; strangers won't add a login item by hand.</td><td>1 h</td></tr>
+      <tr><td><strong>Copy-answer button on the panel</strong></td><td>Definitions are selectable but the panel dismisses on any outside click — one mis-click and the answer's gone. A small copy glyph fixes the fragility.</td><td>1 h</td></tr>
+      <tr><td><strong>True streaming for the claude fallback</strong></td><td><code>claude -p</code> flushes mostly at once; <code>--output-format stream-json</code> parses into real streaming. Only matters when local is down — but that's exactly the stranger-without-Ollama case.</td><td>2–3 h</td></tr>
+      <tr><td><strong>Chat panel ergonomics</strong></td><td>Esc only closes when the input has focus (<code>ChatPanel.swift:214</code>); fixed 420×340 size; single-line input. A local-monitor Esc handler + resizable panel + <code>NSTextView</code> input.</td><td>½ day</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>The release path (what "build and publish" actually is)</h2>
+    <p class="muted">Sequenced; items 1–5 are the blockers, 6–8 are the GitHub half. Effort ~1½–2 days total including P1 bug fixes.</p>
+    <table>
+      <tr><th style="width:28px">#</th><th>Task</th><th style="width:80px">Effort</th></tr>
+      <tr><td>1</td><td><strong>Fix the three P1 bugs</strong> (secure-subrole, stderr drain, carry flush). <span class="badge-ok">done</span></td><td>~2 h</td></tr>
+      <tr><td>2</td><td><strong>Gate the word-logging</strong> behind <code>--debug</code>; keep coordinate/ladder/count logs as-is.</td><td>1–2 h</td></tr>
+      <tr><td>3</td><td><strong>Real <code>.app</code> bundle + build script</strong>: <code>swift build -c release</code> → assemble <code>TangentBar.app</code> with <code>Info.plist</code> (<span class="term">LSUIElement<span class="def"><b>LSUIElement</b> — an Info.plist key marking the app as a menu-bar accessory: no Dock icon, no app-switcher entry. What makes it feel like a utility instead of a terminal process.</span></span>, bundle id, version), convert <code>icon@1024.png</code> → <code>.icns</code>, ad-hoc <code>codesign</code>. <span class="badge-ok">done</span> — <code>scripts/build-app.sh</code>, plus <code>install.sh</code> (the curl target, defaulting to <code>Joshuatanderson/tangentbar</code> — tracks D4).</td><td>½ day</td></tr>
+      <tr><td>4</td><td><strong>No-model first-run state</strong>: zero servers found → menu-bar badge + a small panel linking to Ollama install, with re-check. Gate the claude fallback on the CLI actually existing (otherwise "no model available", not a mystery hang). Fold in the Accessibility guidance menu item.</td><td>½ day</td></tr>
+      <tr><td>5</td><td><strong>Version string</strong> embedded at build, shown in the status menu — bug reports from strangers are undebuggable without it.</td><td>1 h</td></tr>
+      <tr><td>6</td><td><strong>README + LICENSE</strong>: install command, the two gestures, permissions rationale, privacy statement (all local, localhost-only — the genuine selling point), ⌘C-synthesis disclosure, troubleshooting, compatibility matrix distilled from <code>ADAPTERS.md</code>.</td><td>2–3 h</td></tr>
+      <tr><td>7</td><td><strong>GitHub repo + Release</strong>: push, tag <code>v0.1.0</code>, upload the zip + <code>install.sh</code>; the install one-liner in the README.</td><td>1 h</td></tr>
+      <tr><td>8</td><td><strong>CI release workflow</strong> (if D5 = yes): GitHub Actions on tag — build on <code>macos-15</code> (arm64), bundle, zip, attach to the Release. Also a plain build check on push.</td><td>2 h</td></tr>
+    </table>
+    <div class="callout"><b>Assumption — audience</b>
+      Carrying forward the Jul 10 call: the v0 audience is technical-adjacent and comfortable pasting one terminal command. That's what makes the curl installer viable as the primary channel. If you want non-technical downloaders, no free path serves them well — that audience needs the $99 notarization route, out of scope for this cut.</div>
+    <div class="callout arch"><b>Architectural choice — no Xcode project</b>
+      Staying pure SwiftPM with a shell-script bundler, no <code>.xcodeproj</code>. Keeps the repo clean and CI trivial; costs nothing until you need entitlements or Sparkle, both of which the script can absorb later.</div>
+  </section>
+
+  <section>
+    <h2>Decisions</h2>
+
+    <div class="decision rec" data-decision="d1_channel">
+      <strong>D1 · Install channel for the free (unsigned) path</strong><span class="pill">Recommended: both</span>
+      <p class="muted" style="font-size:13.5px">Ad-hoc zip on macOS 15 = "damaged" dialog with no Open Anyway; the escape is one <code>xattr -dr com.apple.quarantine</code> command. The curl installer never acquires quarantine, so it opens clean — and it's the only channel structurally insulated from Apple tightening Gatekeeper further.</p>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="d1" value="both" data-field="d1_channel" checked> <span><strong>Both</strong> — curl installer as the documented path, zip attached to the Release with the <code>xattr</code> incantation for people who won't pipe to sh <span class="why">· costs ~30 extra minutes</span></span></label>
+        <label class="opt"><input type="radio" name="d1" value="curl-only" data-field="d1_channel"> <span><strong>curl installer only</strong> — one blessed path, simplest README</span></label>
+        <label class="opt"><input type="radio" name="d1" value="zip-only" data-field="d1_channel"> <span><strong>Zip only</strong> — no install script to maintain, but every user hits the "damaged" wall and the Terminal incantation</span></span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="d1_channel" placeholder='e.g. "both, but host install.sh in the repo, not a gist"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="d2_scope">
+      <strong>D2 · Pre-publish fix scope</strong> <span class="muted" style="font-size:13px">(rescoped — P1 bugs and the bundle/installer are already done)</span><span class="pill">Recommended: remaining blockers</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="d2" value="remaining-blockers" data-field="d2_scope" checked> <span><strong>Remaining blockers, then publish</strong> — word-log gating, no-model first-run state, version in menu, README + LICENSE, repo + release <span class="why">· ~1 day</span></span></label>
+        <label class="opt"><input type="radio" name="d2" value="plus-p2" data-field="d2_scope"> <span><strong>Remaining blockers + the three P2 bugs</strong> — adds clipboard-flavor restore, triple-click guard, think-only fallback fix <span class="why">· ~1½ days</span></span></label>
+        <label class="opt"><input type="radio" name="d2" value="everything" data-field="d2_scope"> <span><strong>Blockers + P2 + selected UX (D7)</strong> — a genuinely polished v0.1 <span class="why">· ~2½–3 days</span></span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="d2_scope" placeholder='e.g. "blockers+P1, but pull the clipboard-flavor fix forward too"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="d3_license">
+      <strong>D3 · License</strong><span class="pill">Recommended: MIT</span>
+      <div class="opts row">
+        <label class="opt"><input type="radio" name="d3" value="mit" data-field="d3_license" checked> MIT <span class="why">— maximally simple, the norm for this species of Mac utility</span></label>
+        <label class="opt"><input type="radio" name="d3" value="apache2" data-field="d3_license"> Apache-2.0 <span class="why">— adds a patent grant</span></label>
+        <label class="opt"><input type="radio" name="d3" value="gpl3" data-field="d3_license"> GPL-3.0 <span class="why">— copyleft</span></label>
+        <label class="opt"><input type="radio" name="d3" value="defer" data-field="d3_license"> Decide later <span class="why">— blocks the public repo; "no license" means all-rights-reserved</span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="d3_license" placeholder="e.g. copyright holder name to use"></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="d4_repo">
+      <strong>D4 · Repo identity</strong><span class="pill">Recommended: publish this repo as “tangentbar”</span>
+      <p class="muted" style="font-size:13.5px">The 17-commit history is clean and the internal docs (DECISIONS, ADAPTERS, the spike) are an asset, not a liability — they read as engineering rigor. Nothing sensitive is tracked (<code>.hippo/</code> is ignored; verified).</p>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="d4" value="publish-renamed" data-field="d4_repo" checked> <span><strong>Publish this repo, named <code>tangentbar</code></strong> — keep history, keep the docs, commit the untracked decision doc</span></label>
+        <label class="opt"><input type="radio" name="d4" value="fresh-repo" data-field="d4_repo"> <span><strong>Fresh repo, squashed history</strong> — cleanest public face, loses the narrative</span></label>
+        <label class="opt"><input type="radio" name="d4" value="as-is" data-field="d4_repo"> <span><strong>Publish as <code>tangent-2</code></strong> — zero friction, confusing name for strangers</span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="d4_repo" placeholder='e.g. "rename, and move the html decision docs into docs/"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="d5_ci">
+      <strong>D5 · CI release automation</strong><span class="pill">Recommended: yes</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="d5" value="actions" data-field="d5_ci" checked> <span><strong>GitHub Actions</strong> — build check on every push; on tag: bundle, zip, attach to Release. Repeatable releases, and CI-green becomes part of "done" <span class="why">· ~2 h once</span></span></label>
+        <label class="opt"><input type="radio" name="d5" value="local-script" data-field="d5_ci"> <span><strong>Local script only</strong> — release from your machine, add CI when it earns its keep</span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="d5_ci" placeholder='e.g. "yes, but build-check only for now — releases stay manual"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="d6_tests">
+      <strong>D6 · Unit tests</strong><span class="pill">Recommended: add now</span>
+      <p class="muted" style="font-size:13.5px">The <code>filterThink</code> carry bug lives in a pure function a 10-line test would have caught. A test target over the five pure units (<code>filterThink</code>, <code>tangentPrompt</code>, <code>Excerpt</code>, <code>cleanWord</code>, <code>wordAround</code>) needs no UI, no permissions, no focus-stealing — it fits your testing ground rules exactly.</p>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="d6" value="now" data-field="d6_tests" checked> <span><strong>Add the test target with the P1 fixes</strong> — regression-lock the bugs as you fix them <span class="why">· 2–3 h</span></span></label>
+        <label class="opt"><input type="radio" name="d6" value="later" data-field="d6_tests"> <span><strong>Defer</strong> — ship first, test in v0.2</span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="d6_tests" placeholder="notes"></textarea>
+    </div>
+
+    <div class="decision" data-decision="d7_ux">
+      <strong>D7 · Which UX items ride along with the release?</strong> <span class="muted" style="font-size:13px">(multi-select; pre-checked = my picks for best leverage-per-hour)</span>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" value="markdown" data-multi="d7_ux" checked> <span>Markdown rendering in panels <span class="why">· ½ day</span></span></label>
+        <label class="opt"><input type="checkbox" value="exclude-menu" data-multi="d7_ux" checked> <span>"Exclude this app" menu item <span class="why">· 1 h</span></span></label>
+        <label class="opt"><input type="checkbox" value="launch-at-login" data-multi="d7_ux" checked> <span>Launch at Login toggle <span class="why">· 1 h</span></span></label>
+        <label class="opt"><input type="checkbox" value="define-chat-bridge" data-multi="d7_ux"> <span>Define → chat bridge <span class="why">· 2–3 h</span></span></label>
+        <label class="opt"><input type="checkbox" value="copy-button" data-multi="d7_ux"> <span>Copy-answer button on the panel <span class="why">· 1 h</span></span></label>
+        <label class="opt"><input type="checkbox" value="claude-streaming" data-multi="d7_ux"> <span>True streaming for the claude fallback <span class="why">· 2–3 h</span></span></label>
+        <label class="opt"><input type="checkbox" value="chat-ergonomics" data-multi="d7_ux"> <span>Chat panel ergonomics (Esc anywhere, resizable, multiline input) <span class="why">· ½ day</span></span></label>
+        <label class="opt"><input type="checkbox" value="none" data-multi="d7_ux"> <span>None — pure release, UX in v0.2</span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="d7_ux" placeholder='e.g. "markdown yes, but only bold/italic/lists — skip headings"'></textarea>
+    </div>
+  </section>
+
+  <section>
+    <h2>Anything else</h2>
+    <textarea data-note="catchall" placeholder="Cross-cutting commentary — ordering, timing, things I missed (not a substitute for per-decision notes above)"></textarea>
+  </section>
+
+  <footer><button onclick="exportJSON()">Export JSON</button></footer>
+  <pre id="out"></pre>
+  <div id="toast">Copied</div>
+
+<script>
+document.addEventListener('click', (e) => {
+  const term = e.target.closest('.term');
+  document.querySelectorAll('.term.open').forEach(t => { if (t !== term) t.classList.remove('open'); });
+  if (term && !e.target.closest('.def')) term.classList.toggle('open');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.term.open').forEach(t => t.classList.remove('open'));
+});
+
+function exportJSON() {
+  const data = { exportedAt: new Date().toISOString(), decisions:{}, notes:{} };
+  document.querySelectorAll('[data-decision]').forEach(d => {
+    const key = d.dataset.decision;
+    const radio = d.querySelector('input[type=radio][data-field]:checked');
+    if (radio) { data.decisions[key] = radio.value; return; }
+    const checks = [...d.querySelectorAll('input[type=checkbox][data-multi]:checked')].map(c => c.value);
+    if (checks.length || d.querySelector('input[type=checkbox][data-multi]')) data.decisions[key] = checks;
+  });
+  document.querySelectorAll('[data-note]').forEach(t => { data.notes[t.dataset.note] = t.value; });
+  const json = JSON.stringify(data, null, 2);
+  const out = document.getElementById('out');
+  out.textContent = json; out.style.display = 'block'; out.scrollIntoView({behavior:'smooth'});
+  const done = () => { const t = document.getElementById('toast'); t.style.opacity = 1; setTimeout(()=>t.style.opacity=0, 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(json).then(done, () => { console.log(json); alert('Clipboard blocked — JSON shown below and logged.'); });
+  else { console.log(json); alert('Clipboard unavailable — JSON shown below and logged.'); }
+}
+</script>
+</body>
+</html>

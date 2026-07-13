@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TangentBar — pre-built distribution decisions</title>
+<style>
+  :root { --bg:#faf6ec; --card:#ffffff; --ink:#1d2433; --muted:#6d7280; --line:#e3ddcc;
+          --action:#3a4d8f; --ok:#3f7d4e; --caution:#a8730a; --blocker:#a83232; --assume:#6b4d8f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.55 -apple-system, sans-serif; background:var(--bg);
+         color:var(--ink); padding:32px; max-width:920px; margin-inline:auto; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin-bottom:24px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:18px; }
+  h2 { font-size:16px; margin:0 0 10px; }
+  h3 { font-size:14px; margin:16px 0 6px; }
+  p { margin:8px 0; }
+  code, pre { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+  code { background:#f1ecdd; padding:1px 5px; border-radius:4px; }
+  pre { background:#f1ecdd; border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; font-size:14px; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:13px; border-bottom:1px solid var(--line); padding:6px 8px; }
+  td { border-bottom:1px solid var(--line); padding:7px 8px; vertical-align:top; }
+  tr:last-child td { border-bottom:none; }
+  .badge { display:inline-block; font-size:12px; font-weight:600; border-radius:999px; padding:1px 9px; white-space:nowrap; }
+  .badge.ok { color:var(--ok); border:1px solid var(--ok); background:#fbf9f2; }
+  .badge.caution { color:var(--caution); border:1px solid var(--caution); background:#f8f2e4; }
+  .badge.blocker { color:var(--blocker); border:1px solid var(--blocker); background:#faf1f1; }
+  .callout { border-left:4px solid var(--assume); background:#f3eef8; padding:12px 14px; border-radius:8px; margin:12px 0; }
+  .callout.arch { border-color:var(--action); background:#eef1f8; }
+  .callout.caution { border-color:var(--caution); background:#f8f2e4; }
+  .callout b { display:block; margin-bottom:4px; }
+  .term { position:relative; color:inherit; border-bottom:1px dashed var(--assume); cursor:pointer; }
+  .term:hover, .term.open { color:var(--assume); border-bottom-style:solid; }
+  .term > .def { display:none; position:absolute; left:0; top:calc(100% + 8px); z-index:20;
+                 width:max-content; max-width:min(340px,70vw); background:var(--card);
+                 border:1px solid var(--assume); border-radius:8px; padding:10px 12px;
+                 font-size:13px; line-height:1.5; font-weight:400; color:var(--ink);
+                 white-space:normal; box-shadow:0 8px 28px rgba(0,0,0,.18); cursor:auto; }
+  .term.open > .def { display:block; }
+  .term > .def b { color:var(--assume); }
+  .decision { border:1px solid var(--line); border-radius:10px; padding:14px; margin:14px 0; }
+  .decision.rec { border-color:var(--ok); }
+  .pill { display:inline-block; font-size:12px; color:var(--ok); border:1px solid var(--ok);
+          border-radius:999px; padding:1px 8px; margin-left:8px; background:#fbf9f2; }
+  .opts { display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+  label.opt { cursor:pointer; display:flex; gap:8px; align-items:baseline; }
+  label.opt input { flex-shrink:0; position:relative; top:2px; }
+  label.opt .why { color:var(--muted); font-size:13px; }
+  textarea { width:100%; min-height:50px; background:#fbf9f2; color:var(--ink); border:1px solid var(--line);
+             border-radius:8px; padding:8px; font:inherit; resize:vertical; }
+  .note-label { color:var(--muted); font-size:13px; margin:8px 0 4px; }
+  ol.steps { margin:8px 0; padding-left:22px; }
+  ol.steps li { margin:5px 0; }
+  footer { position:sticky; bottom:0; padding:14px 0; background:linear-gradient(transparent, var(--bg) 30%); }
+  button { background:var(--action); color:#fff; border:0; border-radius:8px; padding:10px 18px; font:inherit; cursor:pointer; }
+  pre#out { white-space:pre-wrap; display:none; }
+  #toast { position:fixed; right:24px; bottom:24px; background:var(--ok); color:#fff; padding:8px 14px;
+           border-radius:8px; opacity:0; transition:opacity .2s; }
+</style>
+</head>
+<body>
+  <h1>TangentBar — pre-built distribution</h1>
+  <div class="sub">The "simple version": strangers download a pre-built app and run it without you paying Apple — what that actually takes, and the decisions it forces. · 2026-07-10</div>
+
+  <section>
+    <h2>Verdict</h2>
+    <p><strong>Yes, this is possible — but "ignore the warning" no longer means clicking past a dialog.</strong> Since macOS&nbsp;15 Apple removed the right-click&nbsp;→&nbsp;Open bypass. An app that isn't <span class="term">notarized<span class="def"><b>Notarization</b> — Apple's automated malware scan for apps distributed outside the App Store. You upload the app, Apple scans and blesses it, and Gatekeeper then opens it without complaint. Requires the $99/yr Developer Program.</span></span> hits one of two walls when a stranger downloads it, and the wall depends on how it was signed:</p>
+    <table>
+      <tr><th>Signature on the download</th><th>What the user sees</th><th>Escape hatch</th></tr>
+      <tr>
+        <td>Ad-hoc (what <code>swift build</code> produces today)</td>
+        <td><span class="badge blocker">"damaged and can't be opened"</span> — usually with <em>no</em> Open&nbsp;Anyway offered</td>
+        <td>Terminal: <code>xattr -dr com.apple.quarantine</code>, or avoid <span class="term">quarantine<span class="def"><b>Quarantine attribute</b> — an extended file attribute (<code>com.apple.quarantine</code>) browsers stamp on downloads. Gatekeeper only inspects files carrying it. <code>curl</code> and most CLI tools don't set it, which is why script installs skip the Gatekeeper wall entirely.</span></span> entirely by installing via <code>curl</code></td>
+      </tr>
+      <tr>
+        <td>Developer ID, not notarized</td>
+        <td><span class="badge caution">"Apple could not verify…"</span></td>
+        <td>System Settings → Privacy &amp; Security → Open&nbsp;Anyway → admin auth</td>
+      </tr>
+      <tr>
+        <td>Developer ID + notarized</td>
+        <td><span class="badge ok">Opens normally</span></td>
+        <td>— (this is the $99/yr path, out of scope for this cut)</td>
+      </tr>
+    </table>
+    <p>So the free path is real, but the install instructions <em>are</em> the product: a one-line <code>curl</code> installer sidesteps Gatekeeper legitimately (no quarantine is ever applied), while a plain zip download forces every user through a Terminal incantation or a buried Settings toggle.</p>
+    <p>The second, bigger wall isn't Apple — it's that <strong>the app currently assumes your machine</strong>: a running LM&nbsp;Studio with <code>qwen3.5-0.8b-mlx</code> pulled, Ollama as backup, and the <code>claude</code> CLI for fallback. A stranger has none of these; today they'd get a panel that silently hangs and then errors. The Jul&nbsp;5 publish-readiness review covers the full productization ladder; this doc scopes only what the free download-and-run cut needs.</p>
+
+    <div class="callout"><b>Assumption — who's downloading this</b>
+    I'm assuming the v0 audience is technical-adjacent (comfortable pasting one Terminal command). That's what makes the curl-installer path viable as the primary channel. If you want non-technical users, the free tier can't serve them well — that audience needs D1 option D (pay Apple).</div>
+
+    <div class="callout caution"><b>Gatekeeper behavior is a moving target</b>
+    The table above is accurate as of macOS 15/26, but Apple has tightened unsigned-app handling every year. The curl-script channel is the only one structurally insulated from further tightening (no quarantine → Gatekeeper never evaluates). Worth re-verifying the exact dialog wording on a current OS before writing the README.</div>
+  </section>
+
+  <section>
+    <h2>What exists vs. what's missing</h2>
+    <table>
+      <tr><th>Area</th><th>Today</th><th></th></tr>
+      <tr><td>Binary</td><td>Bare SwiftPM executable, arm64-only, ad-hoc signed, run from a terminal — not a double-clickable <code>.app</code></td><td><span class="badge blocker">blocker</span></td></tr>
+      <tr><td>Icon</td><td><code>assets/icon@1024.png</code> exists; needs <code>.icns</code> conversion only</td><td><span class="badge ok">ready</span></td></tr>
+      <tr><td>Signing identity</td><td>Keychain has "Whorl Dev" (Apple <em>Development</em> cert — cannot distribute); no Developer ID</td><td><span class="badge caution">expected</span></td></tr>
+      <tr><td>Model dependency</td><td>Assumes LM Studio/Ollama already serving models; no-server case = silent hang → claude fallback most users don't have</td><td><span class="badge blocker">blocker</span></td></tr>
+      <tr><td>Privacy</td><td><code>NSLog</code> traces log every clicked word to the unified log (flagged as ship-blocker in the Jul 5 review; still open)</td><td><span class="badge blocker">blocker</span></td></tr>
+      <tr><td>Accessibility grant</td><td>Prompt + poll flow exists and works; but the grant keys to the code signature, which churns (see D2)</td><td><span class="badge caution">gap</span></td></tr>
+      <tr><td>Docs</td><td>Good internal docs; nothing a downloader would see (no README install section, no website)</td><td><span class="badge caution">gap</span></td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>The work, in order</h2>
+    <p>These are required regardless of how the decisions below land. Roughly <strong>1–2 focused days</strong> total.</p>
+    <table>
+      <tr><th>#</th><th>Task</th><th>Detail</th><th>Effort</th></tr>
+      <tr><td>1</td><td><strong>Real <code>.app</code> bundle + build script</strong></td><td><code>swift build -c release</code>, assemble <code>TangentBar.app/Contents/{MacOS,Resources}</code>, write <code>Info.plist</code> with <span class="term">LSUIElement<span class="def"><b>LSUIElement</b> — an Info.plist key that marks the app as a menu-bar accessory: no Dock icon, no app switcher entry. This is what makes it feel like a proper background utility instead of a terminal process.</span></span>, bundle id, version; convert icon to <code>.icns</code>; ad-hoc <code>codesign</code> the bundle. A ~40-line <code>Makefile</code> or shell script.</td><td>½ day</td></tr>
+      <tr><td>2</td><td><strong>Gate the word-logging</strong></td><td>Wrap the extraction/word <code>NSLog</code>s behind a <code>--debug</code> flag or config key. Ship-blocker: any process can read the unified log, so shipped builds must not log what users click.</td><td>1–2 h</td></tr>
+      <tr><td>3</td><td><strong>"No local model" first-run state</strong></td><td>When discovery finds zero servers: menu-bar badge + a small panel saying what's needed, with a link to install Ollama and a "re-check" that reuses the existing discovery. No pull-progress UI yet — that's the v0.2 onboarding from the Jul 5 doc.</td><td>½ day</td></tr>
+      <tr><td>4</td><td><strong>Gate the claude fallback on CLI presence</strong></td><td>If <code>claude</code> isn't on PATH, the fallback becomes an honest "no model available" status instead of a spawn failure. (The fallback status line shipped today already covers the visible half.)</td><td>1 h</td></tr>
+      <tr><td>5</td><td><strong>README install section</strong></td><td>The exact install command, the Accessibility grant steps with a screenshot, the "what data goes where" privacy paragraph (all local, localhost-only — this is a genuine selling point), and the Gatekeeper escape hatch for zip downloaders.</td><td>2 h</td></tr>
+      <tr><td>6</td><td><strong>Version string</strong></td><td>Embed a version in the build, show it in the status menu — otherwise bug reports from strangers are undebuggable.</td><td>1 h</td></tr>
+    </table>
+
+    <h3>What the stranger experiences (recommended path)</h3>
+    <ol class="steps">
+      <li>Runs the documented one-liner: <code>curl -fsSL https://…/install.sh | sh</code> → script downloads the release tarball, expands to <code>/Applications/TangentBar.app</code>, opens it. No quarantine, no Gatekeeper dialog.</li>
+      <li>App launches → macOS asks for Accessibility → System Settings opens on the right pane → grant → app detects it (poll flow already built) and arms.</li>
+      <li>No model server found → menu-bar state points at Ollama install; once Ollama is running, discovery auto-picks a model (qwen→gemma preference already built).</li>
+      <li>Double-click a word anywhere → definition panel. Done.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Decisions</h2>
+
+    <div class="decision rec" data-decision="channel">
+      <strong>D1 — Primary install channel</strong><span class="pill">Recommended: A</span>
+      <p class="note-label">Channels aren't mutually exclusive — this picks which one the README leads with and which one you polish.</p>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="channel" value="A-curl-script" data-field="channel" checked>
+          <span><strong>A · curl install script</strong> (+ release tarball on GitHub) <span class="why">— no quarantine is ever applied, so there is no Gatekeeper wall at all. One pasted command, works on every future macOS. The install script is ~20 lines.</span></span></label>
+        <label class="opt"><input type="radio" name="channel" value="B-zip-xattr" data-field="channel">
+          <span><strong>B · GitHub Release zip + documented bypass</strong> <span class="why">— feels more familiar ("download the app"), but every user hits the "damaged" dialog and must run <code>xattr -dr com.apple.quarantine</code> themselves. Higher drop-off than A for the same audience.</span></span></label>
+        <label class="opt"><input type="radio" name="channel" value="C-homebrew" data-field="channel">
+          <span><strong>C · Homebrew cask</strong> <span class="why">— clean for brew users (<code>brew install --cask --no-quarantine tangentbar</code>), but requires a tap, and non-brew users are excluded. Better as an <em>additive</em> channel once A exists.</span></span></label>
+        <label class="opt"><input type="radio" name="channel" value="D-pay-apple" data-field="channel">
+          <span><strong>D · Skip the free tier — enroll in the Developer Program now</strong> <span class="why">— $99/yr + a few hours of notarization setup buys a normal double-click install for everyone, forever. The right call the moment you want non-technical users; overkill if v0 is for friends and HN.</span></span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="channel" placeholder='e.g. "A now, C when someone asks for it"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="signing">
+      <strong>D2 — Signing identity for free builds</strong><span class="pill">Recommended: A</span>
+      <p class="note-label">Why it matters: the Accessibility grant keys to the app's <span class="term">code-signing identity<span class="def"><b>Designated requirement</b> — the rule TCC stores to recognize "the same app" across launches. For ad-hoc signatures it falls back to the binary's hash, which changes every build — so every update looks like a brand-new app and the Accessibility grant must be re-done.</span></span>. Ad-hoc means every released update forces users to re-grant Accessibility.</p>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="signing" value="A-adhoc" data-field="signing" checked>
+          <span><strong>A · Ad-hoc, accept the re-grant churn</strong> <span class="why">— zero setup. Fine while releases are infrequent; note it in release notes ("macOS will re-ask for Accessibility"). The in-app permission poll already handles re-prompting gracefully.</span></span></label>
+        <label class="opt"><input type="radio" name="signing" value="B-selfsigned" data-field="signing">
+          <span><strong>B · Stable self-signed certificate</strong> <span class="why">— a free, self-created signing cert gives a stable identity so Accessibility survives updates. Gatekeeper treats it the same as ad-hoc (still "damaged" on zip downloads), and it's a moderately fiddly keychain setup on your build machine. Worth it only if you expect frequent updates.</span></span></label>
+        <label class="opt"><input type="radio" name="signing" value="C-devid" data-field="signing">
+          <span><strong>C · Developer ID</strong> <span class="why">— same as D1-D; solves this and Gatekeeper together.</span></span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="signing" placeholder='e.g. "A for v0; revisit at first real update"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="models">
+      <strong>D3 — Model bootstrap for strangers</strong><span class="pill">Recommended: A</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="models" value="A-detect-guide" data-field="models" checked>
+          <span><strong>A · Detect + guide to Ollama</strong> (work item #3) <span class="why">— bless exactly one path for people who have neither server: Ollama is a single dmg, no account, and its REST API allows in-app model pulls later. LM Studio users still auto-detected. Matches the architectural call in the Jul 5 review.</span></span></label>
+        <label class="opt"><input type="radio" name="models" value="B-readme-only" data-field="models">
+          <span><strong>B · README-only</strong> <span class="why">— cheapest possible cut: document "install Ollama first" and ship nothing in-app. Acceptable for a friends-only release; strangers who skip the README get a confusing dead app.</span></span></label>
+        <label class="opt"><input type="radio" name="models" value="C-bundle" data-field="models">
+          <span><strong>C · Bundle an inference runtime + model</strong> <span class="why">— removes the dependency entirely but is a multi-week scope change (llama.cpp/MLX embedding, ~500 MB+ download). Explicitly deferred in the Jul 5 review; listed for completeness.</span></span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="models" placeholder='e.g. "A, and add the in-app pull in v0.2"'></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="arch">
+      <strong>D4 — CPU architecture</strong><span class="pill">Recommended: A</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="arch" value="A-arm64" data-field="arch" checked>
+          <span><strong>A · Apple Silicon only</strong> <span class="why">— the app's whole premise is a fast local model; Intel Macs (last sold 2021) run local LLMs too slowly to deliver the 0.2 s experience anyway. One less build/test matrix.</span></span></label>
+        <label class="opt"><input type="radio" name="arch" value="B-universal" data-field="arch">
+          <span><strong>B · Universal binary</strong> <span class="why">— <code>swift build --arch arm64 --arch x86_64</code> is cheap to produce, but you'd be shipping to hardware where the core experience is bad, untested.</span></span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="arch" placeholder="e.g. &quot;agree — arm64 only, say so on the download page&quot;"></textarea>
+    </div>
+
+    <div class="decision rec" data-decision="updates">
+      <strong>D5 — Update story for v0</strong><span class="pill">Recommended: A</span>
+      <div class="opts">
+        <label class="opt"><input type="radio" name="updates" value="A-manual" data-field="updates" checked>
+          <span><strong>A · None — re-run the installer</strong> <span class="why">— the curl one-liner is also the updater. Zero code. Pair with a "check for updates" menu item that just opens the releases page, if you want a nudge.</span></span></label>
+        <label class="opt"><input type="radio" name="updates" value="B-sparkle" data-field="updates">
+          <span><strong>B · Sparkle auto-updates</strong> <span class="why">— the standard macOS framework for in-app updates. Real work to integrate, and its signature verification sits awkwardly on unsigned builds. Belongs with the paid-tier decision, not v0.</span></span></label>
+      </div>
+      <div class="note-label">Notes on this decision</div>
+      <textarea data-note="updates" placeholder='e.g. "A; add the menu-item nudge"'></textarea>
+    </div>
+
+    <div class="callout arch"><b>Architectural choice — the installer script is the product's front door</b>
+    Under the recommended stack (A/A/A/A/A), the install script carries real responsibility: download the right release, expand to <code>/Applications</code>, remove any stray quarantine, launch, and print the two next steps (Accessibility, Ollama). If it's flaky, that's the first and last impression. Budget the same care for those ~20 lines as for app code — and host it in the repo so it's auditable, since "pipe curl to sh" earns trust through readable source.</div>
+  </section>
+
+  <section>
+    <h2>Explicitly out of scope for this cut</h2>
+    <p>From the Jul 5 publish-readiness review, deferred not forgotten: the full 3-step onboarding window with in-app model pull, a public website, Sparkle updates, notarization, crash reporting, and the settings surface for excluded apps. None block the free download-and-run release.</p>
+  </section>
+
+  <section>
+    <h2>Anything else</h2>
+    <textarea data-note="catchall" placeholder="Cross-cutting commentary — timing, audience, whether the $99 question should just be settled now…"></textarea>
+  </section>
+
+  <footer><button onclick="exportJSON()">Export JSON</button></footer>
+  <pre id="out"></pre>
+  <div id="toast">Copied</div>
+
+<script>
+document.addEventListener('click', (e) => {
+  const term = e.target.closest('.term');
+  document.querySelectorAll('.term.open').forEach(t => { if (t !== term) t.classList.remove('open'); });
+  if (term && !e.target.closest('.def')) term.classList.toggle('open');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.term.open').forEach(t => t.classList.remove('open'));
+});
+
+function exportJSON() {
+  const data = { doc: 'tangentbar-distribution-decisions', exportedAt: new Date().toISOString(), decisions: {}, notes: {} };
+  document.querySelectorAll('[data-decision]').forEach(d => {
+    const key = d.dataset.decision;
+    const sel = d.querySelector('[data-field]:checked');
+    data.decisions[key] = sel ? sel.value : null;
+  });
+  document.querySelectorAll('[data-note]').forEach(t => { data.notes[t.dataset.note] = t.value; });
+  const json = JSON.stringify(data, null, 2);
+  const out = document.getElementById('out');
+  out.textContent = json; out.style.display = 'block'; out.scrollIntoView({behavior:'smooth'});
+  const done = () => { const t = document.getElementById('toast'); t.style.opacity = 1; setTimeout(()=>t.style.opacity=0, 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(json).then(done, () => { console.log(json); alert('Clipboard blocked — JSON shown below and logged.'); });
+  else { console.log(json); alert('Clipboard unavailable — JSON shown below and logged.'); }
+}
+</script>
+</body>
+</html>
