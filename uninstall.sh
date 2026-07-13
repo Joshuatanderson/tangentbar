@@ -20,26 +20,41 @@ DEST="/Applications/TangentBar.app"
 CONFIG_DIR="$HOME/Library/Application Support/TangentBar"
 BUNDLE_ID="com.whorl.TangentBar"
 
-say() { printf '%s\n' "$*"; }
+# Same dependency-free clack-style ui as install.sh (NO_COLOR + TTY aware).
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+  ACC='' DIM='' BLD='' GRN='' RST=''
+else
+  ACC=$(printf '\033[38;2;122;146;224m')
+  DIM=$(printf '\033[2m') BLD=$(printf '\033[1m')
+  GRN=$(printf '\033[32m') RST=$(printf '\033[0m')
+fi
+say()   { printf '%s│%s  %s\n' "$DIM" "$RST" "$*"; }
+ok()    { printf '%s✓%s  %s\n' "$GRN" "$RST" "$*"; }
+intro() { printf '\n%s%s─◠─ tangentbar%s  %s%s%s\n%s│%s\n' "$ACC" "$BLD" "$RST" "$DIM" "$1" "$RST" "$DIM" "$RST"; }
+outro() { printf '%s└%s  %s\n\n' "$DIM" "$RST" "$*"; }
+
+intro "uninstaller"
 
 osascript -e 'quit app "TangentBar"' >/dev/null 2>&1 || true
+sleep 1
+pkill -x TangentBar >/dev/null 2>&1 || true
 
 if [ -d "$DEST" ]; then
   rm -rf "$DEST"
-  say "removed $DEST"
+  ok "removed $DEST"
 else
   say "no app at $DEST (already removed)"
 fi
 
 tccutil reset Accessibility "$BUNDLE_ID" >/dev/null 2>&1 || true
 tccutil reset ListenEvent "$BUNDLE_ID" >/dev/null 2>&1 || true
-say "cleared macOS permission entries for $BUNDLE_ID"
+ok "cleared macOS permission entries for $BUNDLE_ID"
 
 if [ "${1:-}" = "--keep-config" ]; then
   say "kept config at $CONFIG_DIR"
 elif [ -d "$CONFIG_DIR" ]; then
   rm -rf "$CONFIG_DIR"
-  say "removed $CONFIG_DIR"
+  ok "removed $CONFIG_DIR"
 fi
 
-say "TangentBar uninstalled."
+outro "TangentBar uninstalled."

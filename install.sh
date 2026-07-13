@@ -1,7 +1,8 @@
 #!/bin/sh
 # TangentBar installer — the documented install path:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Joshuatanderson/tangentbar/main/install.sh | sh
+#   interactive:  curl -fsSL https://raw.githubusercontent.com/Joshuatanderson/tangentbar/main/install.sh | sh
+#   headless:     curl -fsSL .../install.sh | sh -s -- --headless [--define-model <id>] [--chat-model <id>] [--no-open]
 #
 # Why a script instead of a plain download: curl never applies the
 # com.apple.quarantine attribute, so Gatekeeper never evaluates the app and
@@ -10,6 +11,17 @@
 # What it does, verbatim: fetch the latest GitHub release zip, unpack it,
 # move TangentBar.app into /Applications, walk you through picking local
 # models (Ollama, LM Studio), open the app. Nothing else.
+#
+# Headless mode (agents, CI, dotfiles): no prompts, no /dev/tty needed.
+#   --headless            skip the wizard even on a real terminal
+#   --define-model <id>   write config: model for double-click definitions
+#   --chat-model <id>     write config: model for drag-to-chat conversations
+#   --no-open             don't launch the app afterwards
+# Env equivalents: TANGENTBAR_HEADLESS=1, TANGENTBAR_DEFINE_MODEL,
+# TANGENTBAR_CHAT_MODEL, TANGENTBAR_NO_OPEN=1. Model ids must be served by
+# Ollama/LM Studio at install time, or be a claude CLI model
+# (haiku/sonnet/opus/fable). Without model flags no config is written — the
+# app discovers models on its own.
 
 set -eu
 
@@ -19,22 +31,76 @@ OLLAMA="http://localhost:11434"
 LMSTUDIO="http://localhost:1234"
 CONFIG_DIR="$HOME/Library/Application Support/TangentBar"
 CONFIG="$CONFIG_DIR/config.json"
+TAB=$(printf '\t')
 
-say() { printf '%s\n' "$*"; }
+# ------------------------------------------------------------------- ui
+# The Oathbound-CLI look (clack-style gutter + diamonds) in dependency-free
+# POSIX sh. Honors NO_COLOR (https://no-color.org) and non-TTY stdout.
+
+if [ -n "${NO_COLOR:-}" ] || [ ! -t 1 ]; then
+  ACC='' DIM='' BLD='' GRN='' RED='' YLW='' RST=''
+else
+  ACC=$(printf '\033[38;2;122;146;224m')   # app accent #3a4d8f, lifted for dark terminals
+  DIM=$(printf '\033[2m')  BLD=$(printf '\033[1m')
+  GRN=$(printf '\033[32m') RED=$(printf '\033[31m')
+  YLW=$(printf '\033[33m') RST=$(printf '\033[0m')
+fi
+
+say()   { printf '%s│%s  %s\n' "$DIM" "$RST" "$*"; }            # gutter text
+step()  { printf '%s◇%s  %s\n' "$ACC" "$RST" "$*"; }            # milestone
+ok()    { printf '%s✓%s  %s\n' "$GRN" "$RST" "$*"; }
+warn()  { printf '%s▲%s  %s\n' "$YLW" "$RST" "$*"; }
+die()   { printf '%s✗  %s%s\n' "$RED" "$*" "$RST" >&2; exit 1; }
+intro() { printf '\n%s%s─◠─ tangentbar%s  %s%s%s\n%s│%s\n' "$ACC" "$BLD" "$RST" "$DIM" "$1" "$RST" "$DIM" "$RST"; }
+outro() { printf '%s└%s  %s\n\n' "$DIM" "$RST" "$*"; }
+
+usage() {
+  printf '%s\n' "tangentbar installer
+  interactive:  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sh
+  headless:     curl -fsSL .../install.sh | sh -s -- --headless [options]
+
+  --headless            no prompts (auto when there is no terminal)
+  --define-model <id>   config: model for double-click definitions
+  --chat-model <id>     config: model for drag-to-chat conversations
+  --no-open             don't launch the app afterwards
+  --help                this text
+
+  env: TANGENTBAR_HEADLESS=1  TANGENTBAR_DEFINE_MODEL  TANGENTBAR_CHAT_MODEL
+       TANGENTBAR_NO_OPEN=1   TANGENTBAR_REPO"
+}
+
+# ------------------------------------------------------------------ flags
+HEADLESS="${TANGENTBAR_HEADLESS:-}"
+NO_OPEN="${TANGENTBAR_NO_OPEN:-}"
+DEFINE_REQ="${TANGENTBAR_DEFINE_MODEL:-}"
+CHAT_REQ="${TANGENTBAR_CHAT_MODEL:-}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --headless) HEADLESS=1 ;;
+    --no-open)  NO_OPEN=1 ;;
+    --define-model)   [ $# -ge 2 ] || die "--define-model needs a value"; DEFINE_REQ=$2; shift ;;
+    --define-model=*) DEFINE_REQ=${1#*=} ;;
+    --chat-model)     [ $# -ge 2 ] || die "--chat-model needs a value"; CHAT_REQ=$2; shift ;;
+    --chat-model=*)   CHAT_REQ=${1#*=} ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; die "unknown option: $1" ;;
+  esac
+  shift
+done
+# Passing models implies you don't want prompts.
+if [ -n "$DEFINE_REQ" ] || [ -n "$CHAT_REQ" ]; then HEADLESS=1; fi
 
 # ---------------------------------------------------------------- download
-say "TangentBar installer — fetching the latest release of ${REPO}…"
+intro "installer"
+say "fetching the latest release of ${REPO}…"
 
 API="https://api.github.com/repos/${REPO}/releases/latest"
 URL=$(curl -fsSL "$API" \
   | grep -o '"browser_download_url": *"[^"]*TangentBar[^"]*\.zip"' \
   | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')
 
-if [ -z "$URL" ]; then
-  say "error: no release zip found at ${API}" >&2
-  say "       (check https://github.com/${REPO}/releases)" >&2
-  exit 1
-fi
+[ -n "$URL" ] || die "no release zip found at ${API} (check https://github.com/${REPO}/releases)"
 
 TMP=$(mktemp -d /tmp/tangentbar.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
@@ -44,7 +110,7 @@ curl -fsSL -o "$TMP/TangentBar.zip" "$URL"
 
 # ditto preserves the bundle structure and the code signature.
 ditto -xk "$TMP/TangentBar.zip" "$TMP"
-[ -d "$TMP/TangentBar.app" ] || { say "error: zip did not contain TangentBar.app" >&2; exit 1; }
+[ -d "$TMP/TangentBar.app" ] || die "zip did not contain TangentBar.app"
 
 # macOS TCC keys the Accessibility grant to the app's code signature
 # (designated requirement). If the incoming build's signature differs from
@@ -52,6 +118,8 @@ ditto -xk "$TMP/TangentBar.zip" "$TMP"
 # grant silently dies, while its toggle stays ON in System Settings and
 # re-toggling never revives it. Drop the stale entry so the app can re-prompt
 # cleanly. Same story when the app is gone but a leftover entry lingers.
+# Order matters: the app must be fully dead before the reset, or its 2 s
+# permission poll re-registers a TCC entry keyed to the old signature.
 OLD_REQ=""
 if [ -d "$DEST" ]; then
   OLD_REQ=$(codesign -d -r- "$DEST" 2>&1 | grep '^designated' || true)
@@ -59,28 +127,30 @@ if [ -d "$DEST" ]; then
   # into the variable name and set -u aborts on the "unbound" result.
   say "replacing existing ${DEST}…"
   osascript -e 'quit app "TangentBar"' >/dev/null 2>&1 || true
+  sleep 1
+  pkill -x TangentBar >/dev/null 2>&1 || true
   rm -rf "$DEST"
 fi
 mv "$TMP/TangentBar.app" "$DEST"
-say "installed → $DEST"
+ok "installed → $DEST"
 
 NEW_REQ=$(codesign -d -r- "$DEST" 2>&1 | grep '^designated' || true)
 if [ -z "$OLD_REQ" ] || [ "$OLD_REQ" != "$NEW_REQ" ]; then
   tccutil reset Accessibility com.whorl.TangentBar >/dev/null 2>&1 || true
   if [ -n "$OLD_REQ" ]; then
-    say "note: this build's code signature differs from the installed one, so macOS"
-    say "      invalidated the old Accessibility grant. Cleared it — TangentBar will"
-    say "      ask for Accessibility again on launch."
+    say "note: this build's code signature differs from the installed one, so"
+    say "macOS invalidated the old Accessibility grant. Cleared it — TangentBar"
+    say "will ask for Accessibility again on launch."
   fi
 fi
 
 # ------------------------------------------------------------ model wizard
 # Interactive even under `curl | sh` (stdin is the pipe): prompts read from
-# /dev/tty. No terminal, or already configured → skip; the app's own model
-# discovery and menu handle everything later.
+# /dev/tty. No terminal, headless flag, or already configured → skip; the
+# app's own model discovery and menu handle everything later.
 
 ask() {  # ask "prompt" -> $ANS
-  printf '%s' "$1" > /dev/tty
+  printf '%s◆%s  %s' "$ACC" "$RST" "$1" > /dev/tty
   IFS= read -r ANS < /dev/tty
 }
 
@@ -99,8 +169,6 @@ list_lmstudio() {
     | grep -o '"id": *"[^"]*"' | sed 's/.*"\([^"]*\)"/\1/' \
     | grep -viE "$NONCHAT"
 }
-
-TAB=$(printf '\t')
 
 # All models from both servers, one per line as "<id><TAB><baseURL>" — the
 # app tracks a base URL per model slot, so the wizard must too. Model ids
@@ -139,12 +207,69 @@ show_models() {  # numbered menu of $MODELS, with the serving app named
       "$OLLAMA"*)   s="Ollama" ;;
       *)            s="claude CLI" ;;
     esac
-    say "  $i) $m — $s"
+    printf '%s│%s    %s%2d)%s %s %s— %s%s\n' "$DIM" "$RST" "$BLD" "$i" "$RST" "$m" "$DIM" "$s" "$RST"
   done
 }
 
 pick_line() {  # pick_line <number> -> "<id><TAB><baseURL>" (empty if out of range)
   printf '%s\n' "$MODELS" | sed -n "${1}p"
+}
+
+# Claude models join the list after the local ones — pickable, never the
+# nudged default (local-first, D7).
+gather_all_models() {
+  MODELS=$(collect_models)
+  CLAUDE_MODELS=$(collect_claude_models)
+  if [ -n "$CLAUDE_MODELS" ]; then
+    if [ -n "$MODELS" ]; then
+      MODELS=$(printf '%s\n%s' "$MODELS" "$CLAUDE_MODELS")
+    else
+      MODELS=$CLAUDE_MODELS
+    fi
+  fi
+}
+
+resolve_url() {  # resolve_url <model-id> -> base URL on stdout, or nothing
+  printf '%s\n' "$MODELS" | awk -F"$TAB" -v m="$1" '$1==m{print $2; exit}'
+}
+
+write_config() {  # write_config <define> <defineURL> <chat> <chatURL>
+  mkdir -p "$CONFIG_DIR"
+  cat > "$CONFIG" <<EOF
+{
+  "tangentModel": "$1",
+  "localBaseURL": "$2",
+  "chatModel": "$3",
+  "chatLocalBaseURL": "$4"
+}
+EOF
+  ok "saved → $CONFIG"
+}
+
+headless_config() {
+  [ -n "$DEFINE_REQ" ] || [ -n "$CHAT_REQ" ] || return 0
+  if [ -f "$CONFIG" ]; then
+    warn "config already exists at $CONFIG — keeping it; requested models NOT applied"
+    say "(switch models from the menu-bar icon, or edit the file)"
+    return 0
+  fi
+  gather_all_models
+  D_MODEL="$DEFINE_REQ" C_MODEL="$CHAT_REQ" D_URL="" C_URL=""
+  if [ -n "$D_MODEL" ]; then
+    D_URL=$(resolve_url "$D_MODEL")
+    [ -n "$D_URL" ] || die "define model '$D_MODEL' not found (not served by Ollama/LM Studio, not a claude CLI model) — app installed, config not written"
+  fi
+  if [ -n "$C_MODEL" ]; then
+    C_URL=$(resolve_url "$C_MODEL")
+    [ -n "$C_URL" ] || die "chat model '$C_MODEL' not found (not served by Ollama/LM Studio, not a claude CLI model) — app installed, config not written"
+  fi
+  if [ -z "$D_MODEL" ] && [ -n "$C_MODEL" ]; then
+    # Config needs a define model; borrow the chat pick rather than fail.
+    D_MODEL=$C_MODEL D_URL=$C_URL
+  fi
+  write_config "$D_MODEL" "$D_URL" "$C_MODEL" "$C_URL"
+  step "define model → $D_MODEL"
+  step "chat model → ${C_MODEL:-same as define}"
 }
 
 wizard() {
@@ -154,7 +279,7 @@ wizard() {
   fi
 
   say ""
-  say "— Model setup —"
+  step "model setup"
   say "TangentBar answers from a model running on YOUR machine (LM Studio or"
   say "Ollama). Ollama is the easiest way to serve one (single app, no account)."
 
@@ -171,7 +296,7 @@ wizard() {
       ask "Press return once Ollama is installed and running (or type skip): "
       [ "$ANS" = "skip" ] && return 0
       curl -fsS --max-time 2 "$OLLAMA/api/tags" >/dev/null 2>&1 || {
-        say "still can't reach Ollama at $OLLAMA — skipping; TangentBar will find it once it's up."
+        warn "still can't reach Ollama at $OLLAMA — skipping; TangentBar will find it once it's up."
         return 0
       }
     fi
@@ -185,27 +310,17 @@ wizard() {
         say "run 'ollama pull qwen3:1.7b' in a terminal, then relaunch TangentBar."
       fi
     fi
-    MODELS=$(collect_models)
   fi
 
-  # Claude models join the list after the local ones — pickable, never the
-  # nudged default (local-first, D7).
-  CLAUDE_MODELS=$(collect_claude_models)
-  if [ -n "$CLAUDE_MODELS" ]; then
-    if [ -n "$MODELS" ]; then
-      MODELS=$(printf '%s\n%s' "$MODELS" "$CLAUDE_MODELS")
-    else
-      MODELS=$CLAUDE_MODELS
-    fi
-  fi
+  gather_all_models
   [ -z "$MODELS" ] && return 0
 
   say ""
-  say "Models found:"
+  step "models found"
   show_models
 
   say ""
-  say "DEFINE model — answers the double-click definitions. Pick something very"
+  say "${BLD}DEFINE model${RST} — answers the double-click definitions. Pick something very"
   say "small and lightweight (≤2B parameters): instant beats smart here."
   ask "number [1]: "
   N=$(printf '%s' "${ANS:-1}" | tr -cd '0-9')
@@ -213,10 +328,10 @@ wizard() {
   [ -z "$LINE" ] && LINE=$(pick_line 1)
   DEFINE=${LINE%%"$TAB"*}
   DEFINE_URL=${LINE##*"$TAB"}
-  say "define model → $DEFINE"
+  step "define model → $DEFINE"
 
   say ""
-  say "CHAT model — powers the drag-to-chat conversations. This one wants real"
+  say "${BLD}CHAT model${RST} — powers the drag-to-chat conversations. This one wants real"
   say "quality (Sonnet/Opus-class or better). Locally that means a much bigger"
   say "model; the claude CLI entries are a natural fit here. Press return to"
   say "reuse the define model — when local fails, chats fall back to Sonnet"
@@ -233,27 +348,25 @@ wizard() {
       CHAT_URL=${LINE##*"$TAB"}
     fi
   fi
-  say "chat model → ${CHAT:-same as define}"
+  step "chat model → ${CHAT:-same as define}"
 
-  mkdir -p "$CONFIG_DIR"
-  cat > "$CONFIG" <<EOF
-{
-  "tangentModel": "$DEFINE",
-  "localBaseURL": "$DEFINE_URL",
-  "chatModel": "$CHAT",
-  "chatLocalBaseURL": "$CHAT_URL"
-}
-EOF
-  say "saved → $CONFIG"
+  write_config "$DEFINE" "$DEFINE_URL" "$CHAT" "$CHAT_URL"
 }
 
-if [ -c /dev/tty ] && ( : < /dev/tty ) 2>/dev/null; then
+if [ -n "$HEADLESS" ]; then
+  headless_config
+elif [ -c /dev/tty ] && ( : < /dev/tty ) 2>/dev/null; then
   wizard
 else
   say "(non-interactive shell — skipping model setup; TangentBar discovers local models on its own)"
 fi
 
 say ""
-say "opening TangentBar… (macOS will ask for the Accessibility permission on first run —"
-say "it's how TangentBar reads the text around your click; nothing leaves your machine)"
-open "$DEST"
+if [ -n "$NO_OPEN" ]; then
+  outro "installed. Launch /Applications/TangentBar.app when ready — macOS will ask for the Accessibility permission on first run."
+else
+  say "opening TangentBar… (macOS will ask for the Accessibility permission on first run —"
+  say "it's how TangentBar reads the text around your click; nothing leaves your machine)"
+  open "$DEST"
+  outro "double-click any word to take a tangent."
+fi

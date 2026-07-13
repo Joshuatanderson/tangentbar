@@ -19,7 +19,16 @@ Two gestures:
 curl -fsSL https://raw.githubusercontent.com/Joshuatanderson/tangentbar/main/install.sh | sh
 ```
 
-The script downloads the latest release into `/Applications`, walks you through picking local models (it will point you at [Ollama](https://ollama.com) if you don't have a model server yet), and opens the app. Installing via `curl` also means macOS never applies the quarantine flag, so the unsigned build opens without Gatekeeper friction.
+The script downloads the latest release into `/Applications`, walks you through picking local models (it will point you at [Ollama](https://ollama.com) if you don't have a model server yet), and opens the app. Installing via `curl` also means macOS never applies the quarantine flag, so the build opens without Gatekeeper friction.
+
+**Headless / agent install** — no prompts, no terminal needed:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Joshuatanderson/tangentbar/main/install.sh | sh -s -- --headless \
+  --define-model qwen3:1.7b --chat-model sonnet --no-open
+```
+
+Model flags are optional (without them the app discovers models itself) and must name something served by Ollama/LM Studio at install time, or a claude CLI model (`haiku`/`sonnet`/`opus`/`fable`). Env equivalents: `TANGENTBAR_HEADLESS=1`, `TANGENTBAR_DEFINE_MODEL`, `TANGENTBAR_CHAT_MODEL`, `TANGENTBAR_NO_OPEN=1`.
 
 **Manual download instead?** Grab the zip from [Releases](https://github.com/Joshuatanderson/tangentbar/releases), then clear the quarantine flag before first open (the app is not notarized — macOS 15+ shows *"damaged and can't be opened"* otherwise):
 
@@ -34,6 +43,8 @@ curl -fsSL https://raw.githubusercontent.com/Joshuatanderson/tangentbar/main/uni
 ```
 
 Quits the app, deletes it, removes its config, and — the part people forget — clears the macOS Accessibility permission entries. A leftover entry looks granted in System Settings but matches nothing, and a later reinstall inherits a dead toggle that off/on can't revive. (Pass `--keep-config` to keep your model picks.)
+
+The same script is bundled into the app: menu-bar icon → **Dev → Uninstall TangentBar…**
 
 ### First run
 
