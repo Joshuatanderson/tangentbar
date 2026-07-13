@@ -180,7 +180,8 @@ enum Extractor {
 
     /// A usable word has at least one letter or digit once invisible junk
     /// (U+FFFC object replacement, zero-width space) is stripped.
-    private static func cleanWord(_ raw: String?) -> String? {
+    /// Internal (not private) for the unit tests.
+    static func cleanWord(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let cleaned = raw
             .replacingOccurrences(of: "\u{FFFC}", with: "")
@@ -365,7 +366,8 @@ enum Extractor {
         return out
     }
 
-    private static func wordAround(_ text: String, offset: Int) -> String? {
+    /// Internal (not private) for the unit tests.
+    static func wordAround(_ text: String, offset: Int) -> String? {
         let chars = Array(text)
         guard offset >= 0, offset < chars.count else { return nil }
         let isWord: (Character) -> Bool = { $0.isLetter || $0.isNumber || $0 == "'" || $0 == "-" }

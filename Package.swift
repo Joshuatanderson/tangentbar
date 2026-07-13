@@ -5,6 +5,8 @@ let package = Package(
     name: "TangentBar",
     platforms: [.macOS(.v13)],
     targets: [
-        .executableTarget(name: "TangentBar", path: "Sources/TangentBar")
+        .executableTarget(name: "TangentBar", path: "Sources/TangentBar"),
+        .testTarget(name: "TangentBarTests", dependencies: ["TangentBar"],
+                    path: "Tests/TangentBarTests"),
     ]
 )

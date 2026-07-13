@@ -74,7 +74,8 @@ final class SSEStream: NSObject, URLSessionDataDelegate {
     }
 
     /// Stateful strip of <think>…</think>; tolerates tags split across chunks.
-    private func filterThink(_ chunk: String) -> String {
+    /// Internal (not private) for the unit tests.
+    func filterThink(_ chunk: String) -> String {
         var text = carry + chunk
         carry = ""
         var out = ""
@@ -84,7 +85,14 @@ final class SSEStream: NSObject, URLSessionDataDelegate {
                     text = String(text[end.upperBound...])
                     insideThink = false
                 } else {
-                    return out  // still thinking; drop the rest
+                    // Still thinking; drop the rest — but hold a possible
+                    // partial "</think>" straddling the boundary, or the
+                    // closing tag is lost and the whole answer stays hidden.
+                    if let lt = text.lastIndex(of: "<"),
+                       text.distance(from: lt, to: text.endIndex) < 8 {
+                        carry = String(text[lt...])
+                    }
+                    return out
                 }
             } else if let start = text.range(of: "<think>") {
                 out += text[..<start.lowerBound]
