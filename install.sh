@@ -46,7 +46,9 @@ ditto -xk "$TMP/TangentBar.zip" "$TMP"
 [ -d "$TMP/TangentBar.app" ] || { say "error: zip did not contain TangentBar.app" >&2; exit 1; }
 
 if [ -d "$DEST" ]; then
-  say "replacing existing $DEST…"
+  # ${braces} required: bash 3.2 (/bin/sh) folds a trailing multibyte char
+  # into the variable name and set -u aborts on the "unbound" result.
+  say "replacing existing ${DEST}…"
   rm -rf "$DEST"
 fi
 mv "$TMP/TangentBar.app" "$DEST"
