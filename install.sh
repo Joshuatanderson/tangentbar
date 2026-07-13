@@ -9,13 +9,14 @@
 #
 # What it does, verbatim: fetch the latest GitHub release zip, unpack it,
 # move TangentBar.app into /Applications, walk you through picking local
-# models (Ollama), open the app. Nothing else.
+# models (Ollama, LM Studio), open the app. Nothing else.
 
 set -eu
 
 REPO="${TANGENTBAR_REPO:-Joshuatanderson/tangentbar}"
 DEST="/Applications/TangentBar.app"
 OLLAMA="http://localhost:11434"
+LMSTUDIO="http://localhost:1234"
 CONFIG_DIR="$HOME/Library/Application Support/TangentBar"
 CONFIG="$CONFIG_DIR/config.json"
 
@@ -64,12 +65,43 @@ ask() {  # ask "prompt" -> $ANS
   IFS= read -r ANS < /dev/tty
 }
 
-list_models() {
-  # Same non-chat filter the app's discovery applies (embedding/audio/image
-  # models can't answer a definition).
+# Same non-chat filter the app's discovery applies (embedding/audio/image
+# models can't answer a definition).
+NONCHAT='embed|whisper|clip|diffusion'
+
+list_ollama() {
   curl -fsS --max-time 3 "$OLLAMA/api/tags" 2>/dev/null \
     | grep -o '"name":"[^"]*"' | sed 's/"name":"//;s/"$//' \
-    | grep -viE 'embed|whisper|clip|diffusion'
+    | grep -viE "$NONCHAT"
+}
+
+list_lmstudio() {
+  curl -fsS --max-time 3 "$LMSTUDIO/v1/models" 2>/dev/null \
+    | grep -o '"id": *"[^"]*"' | sed 's/.*"\([^"]*\)"/\1/' \
+    | grep -viE "$NONCHAT"
+}
+
+TAB=$(printf '\t')
+
+# All models from both servers, one per line as "<id><TAB><baseURL>" — the
+# app tracks a base URL per model slot, so the wizard must too. Model ids
+# never contain whitespace on either server.
+collect_models() {
+  for m in $(list_lmstudio || true); do printf '%s\t%s\n' "$m" "$LMSTUDIO/v1"; done
+  for m in $(list_ollama || true); do printf '%s\t%s\n' "$m" "$OLLAMA/v1"; done
+}
+
+show_models() {  # numbered menu of $MODELS, with the serving app named
+  i=0
+  printf '%s\n' "$MODELS" | while IFS="$TAB" read -r m u; do
+    i=$((i+1))
+    case "$u" in "$LMSTUDIO"*) s="LM Studio" ;; *) s="Ollama" ;; esac
+    say "  $i) $m — $s"
+  done
+}
+
+pick_line() {  # pick_line <number> -> "<id><TAB><baseURL>" (empty if out of range)
+  printf '%s\n' "$MODELS" | sed -n "${1}p"
 }
 
 wizard() {
@@ -80,49 +112,53 @@ wizard() {
 
   say ""
   say "— Model setup —"
-  say "TangentBar answers from a model running on YOUR machine. Ollama is the"
-  say "easiest way to serve one (single app, no account)."
+  say "TangentBar answers from a model running on YOUR machine (LM Studio or"
+  say "Ollama). Ollama is the easiest way to serve one (single app, no account)."
 
-  if ! curl -fsS --max-time 2 "$OLLAMA/api/tags" >/dev/null 2>&1; then
-    ask "Ollama isn't running. Open its download page now? [Y/n] "
-    case "$ANS" in
-      n|N) say "skipping model setup — TangentBar will discover models whenever a server appears."; return 0 ;;
-    esac
-    open "https://ollama.com/download"
-    ask "Press return once Ollama is installed and running (or type skip): "
-    [ "$ANS" = "skip" ] && return 0
-    curl -fsS --max-time 2 "$OLLAMA/api/tags" >/dev/null 2>&1 || {
-      say "still can't reach Ollama at $OLLAMA — skipping; TangentBar will find it once it's up."
-      return 0
-    }
-  fi
-
-  MODELS=$(list_models || true)
+  MODELS=$(collect_models)
   if [ -z "$MODELS" ]; then
-    say ""
-    say "Ollama is running but has no models yet."
-    if command -v ollama >/dev/null 2>&1; then
-      ask "Pull a small, fast one for definitions now? qwen3:1.7b, ~1.4 GB [Y/n] "
-      case "$ANS" in n|N) ;; *) ollama pull qwen3:1.7b < /dev/tty > /dev/tty 2>&1 || true ;; esac
-      MODELS=$(list_models || true)
-    else
-      say "run 'ollama pull qwen3:1.7b' in a terminal, then relaunch TangentBar."
+    # Neither server had a usable model. The Ollama route is the one we can
+    # walk a stranger through end-to-end, so nudge that way.
+    if ! curl -fsS --max-time 2 "$OLLAMA/api/tags" >/dev/null 2>&1; then
+      ask "No local model server is running. Open the Ollama download page now? [Y/n] "
+      case "$ANS" in
+        n|N) say "skipping model setup — TangentBar will discover models whenever a server appears."; return 0 ;;
+      esac
+      open "https://ollama.com/download"
+      ask "Press return once Ollama is installed and running (or type skip): "
+      [ "$ANS" = "skip" ] && return 0
+      curl -fsS --max-time 2 "$OLLAMA/api/tags" >/dev/null 2>&1 || {
+        say "still can't reach Ollama at $OLLAMA — skipping; TangentBar will find it once it's up."
+        return 0
+      }
     fi
+    if ! list_ollama | grep -q .; then
+      say ""
+      say "Ollama is running but has no models yet."
+      if command -v ollama >/dev/null 2>&1; then
+        ask "Pull a small, fast one for definitions now? qwen3:1.7b, ~1.4 GB [Y/n] "
+        case "$ANS" in n|N) ;; *) ollama pull qwen3:1.7b < /dev/tty > /dev/tty 2>&1 || true ;; esac
+      else
+        say "run 'ollama pull qwen3:1.7b' in a terminal, then relaunch TangentBar."
+      fi
+    fi
+    MODELS=$(collect_models)
   fi
   [ -z "$MODELS" ] && return 0
 
   say ""
   say "Local models found:"
-  i=0
-  for m in $MODELS; do i=$((i+1)); say "  $i) $m"; done
+  show_models
 
   say ""
   say "DEFINE model — answers the double-click definitions. Pick something very"
   say "small and lightweight (≤2B parameters): instant beats smart here."
   ask "number [1]: "
   N=$(printf '%s' "${ANS:-1}" | tr -cd '0-9')
-  DEFINE=$(printf '%s\n' "$MODELS" | sed -n "${N:-1}p")
-  [ -z "$DEFINE" ] && DEFINE=$(printf '%s\n' "$MODELS" | sed -n 1p)
+  LINE=$(pick_line "${N:-1}")
+  [ -z "$LINE" ] && LINE=$(pick_line 1)
+  DEFINE=${LINE%%"$TAB"*}
+  DEFINE_URL=${LINE##*"$TAB"}
   say "define model → $DEFINE"
 
   say ""
@@ -130,21 +166,25 @@ wizard() {
   say "quality (Sonnet/Opus-class or better), which locally means a much bigger"
   say "model. Press return to reuse the define model for now; if the claude CLI"
   say "is installed, chats fall back to Sonnet automatically when local fails."
+  show_models
   ask "number or return for same-as-define: "
   CHAT=""
+  CHAT_URL=""
   N=$(printf '%s' "$ANS" | tr -cd '0-9')
   if [ -n "$N" ]; then
-    CHAT=$(printf '%s\n' "$MODELS" | sed -n "${N}p")
+    LINE=$(pick_line "$N")
+    if [ -n "$LINE" ]; then
+      CHAT=${LINE%%"$TAB"*}
+      CHAT_URL=${LINE##*"$TAB"}
+    fi
   fi
   say "chat model → ${CHAT:-same as define}"
 
   mkdir -p "$CONFIG_DIR"
-  CHAT_URL=""
-  [ -n "$CHAT" ] && CHAT_URL="$OLLAMA/v1"
   cat > "$CONFIG" <<EOF
 {
   "tangentModel": "$DEFINE",
-  "localBaseURL": "$OLLAMA/v1",
+  "localBaseURL": "$DEFINE_URL",
   "chatModel": "$CHAT",
   "chatLocalBaseURL": "$CHAT_URL"
 }
