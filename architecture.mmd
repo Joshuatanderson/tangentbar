@@ -1,0 +1,76 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "#f2ecdf", "primaryColor": "#faf6ec", "primaryTextColor": "#1d2433", "primaryBorderColor": "#d5cab2", "lineColor": "#3a4d8f", "secondaryColor": "#e8e0cd", "tertiaryColor": "#f2ecdf", "clusterBkg": "#f2ecdf", "clusterBorder": "#d5cab2", "edgeLabelBackground": "#faf6ec", "fontFamily": "Iowan Old Style, Palatino, Georgia, serif", "fontSize": "14px"}, "flowchart": {"curve": "basis", "padding": 12, "nodeSpacing": 40, "rankSpacing": 55}}}%%
+flowchart TB
+
+  user(["User in any app<br/>double-click a word · drag-select a passage"])
+
+  subgraph sensor["Sensor layer"]
+    tap["EventTap<br/>listen-only, mouse-only CGEventTap<br/>double / triple / drag-up + pasteboard changeCount"]
+  end
+
+  ctrl["AppController<br/>one controller, one flow<br/>trigger-modifier gate · excluded apps ·<br/>280 ms triple-click window"]
+
+  subgraph extract["Extraction layer"]
+    ladder["Extractor — word + context ladder<br/>1 full AX range · 2 selection-only · 2b value-only<br/>3a copy-on-select · 3b ⌘C synthesis<br/>(sanitizes U+FFFC / zero-width; secure fields suppressed)"]
+    term["TerminalContext<br/>cmux CLI capture-pane<br/>(GPU terminals expose no AX text)"]
+  end
+
+  subgraph surfaces["Surface layer"]
+    pill["Pill<br/>opt-in 'ask first' capsule<br/>(default off for defines; always used for chat)"]
+    tpanel["TangentPanel<br/>non-activating card at cursor<br/>streams markdown, click-away dismiss"]
+    cpanel["ChatPanel<br/>activating key panel<br/>⌘V routing for Wispr Flow dictation"]
+    menu["Status item + menu<br/>Define Model / Chat Model pickers ·<br/>trigger mode · exclusions · launch at login"]
+  end
+
+  subgraph engineL["Engine layer"]
+    engine["Engine<br/>tangentPrompt / Excerpt prompt builders<br/>prewarm + 240 s keepalive (ttl 7200)"]
+    sse["SSEStream<br/>OpenAI-compatible SSE client<br/>strips &lt;think&gt; blocks"]
+    ccli["streamViaClaude<br/>claude -p --output-format stream-json<br/>partial-message deltas"]
+    disc["ModelDiscovery<br/>probes /v1/models on both servers<br/>rank: qwen &gt; gemma &gt; rest<br/>+ haiku/sonnet/opus when claude CLI exists"]
+  end
+
+  cfg[("config.json<br/>~/Library/Application Support/TangentBar<br/>tolerant decoding — old configs keep working")]
+
+  subgraph backends["Model backends (local-first, D7)"]
+    lms["LM Studio<br/>localhost:1234/v1"]
+    oll["Ollama<br/>localhost:11434/v1"]
+    claude["claude CLI<br/>haiku · sonnet · opus<br/>(probed at 6 known install paths)"]
+  end
+
+  subgraph os["macOS"]
+    ax["Accessibility APIs<br/>(AXUIElement)"]
+    pb["Pasteboard"]
+    cmux["cmux CLI"]
+  end
+
+  user --> tap
+  tap -- "double-click (flow A)<br/>drag-select (flow B)" --> ctrl
+
+  ctrl -- "flow A: extract word+context" --> ladder
+  ctrl -- "flow B: grab selection" --> ladder
+  ladder --> ax
+  ladder --> pb
+  ladder -- "terminal apps" --> term
+  term --> cmux
+
+  ctrl -- "flow A (pill only if configured)" --> tpanel
+  ctrl -- "flow B: always pill first" --> pill
+  pill --> cpanel
+  ctrl --- menu
+
+  tpanel -- "streamTangent<br/>(define model, 300 tok)" --> engine
+  cpanel -- "streamChat<br/>(chat model, 700 tok)" --> engine
+
+  engine -- "local model selected" --> sse
+  engine -- "claude model selected" --> ccli
+  sse --> lms
+  sse --> oll
+  sse -. "local unreachable →<br/>fallback (haiku / sonnet)" .-> ccli
+  ccli --> claude
+
+  menu -- "menu open / launch" --> disc
+  disc --> lms
+  disc --> oll
+  disc -.-> claude
+
+  ctrl <--> cfg
+  engine --> cfg
