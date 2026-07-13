@@ -27,6 +27,14 @@ The script downloads the latest release into `/Applications`, walks you through 
 unzip TangentBar-*.zip && xattr -dr com.apple.quarantine TangentBar.app && mv TangentBar.app /Applications/ && open /Applications/TangentBar.app
 ```
 
+### Uninstall
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Joshuatanderson/tangentbar/main/uninstall.sh | sh
+```
+
+Quits the app, deletes it, removes its config, and — the part people forget — clears the macOS Accessibility permission entries. A leftover entry looks granted in System Settings but matches nothing, and a later reinstall inherits a dead toggle that off/on can't revive. (Pass `--keep-config` to keep your model picks.)
+
 ### First run
 
 1. macOS asks for the **Accessibility** permission — this is how TangentBar reads the text around your click (see [Privacy](#privacy)). Grant it in System Settings → Privacy & Security → Accessibility; the app detects the grant and arms itself.

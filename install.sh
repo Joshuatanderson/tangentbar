@@ -5,7 +5,7 @@
 #
 # Why a script instead of a plain download: curl never applies the
 # com.apple.quarantine attribute, so Gatekeeper never evaluates the app and
-# the ad-hoc signature opens clean — no "damaged" dialog, no Settings dance.
+# the self-signed signature opens clean — no "damaged" dialog, no Settings dance.
 #
 # What it does, verbatim: fetch the latest GitHub release zip, unpack it,
 # move TangentBar.app into /Applications, walk you through picking local
@@ -46,14 +46,33 @@ curl -fsSL -o "$TMP/TangentBar.zip" "$URL"
 ditto -xk "$TMP/TangentBar.zip" "$TMP"
 [ -d "$TMP/TangentBar.app" ] || { say "error: zip did not contain TangentBar.app" >&2; exit 1; }
 
+# macOS TCC keys the Accessibility grant to the app's code signature
+# (designated requirement). If the incoming build's signature differs from
+# the installed one — always true for the old ad-hoc builds — the existing
+# grant silently dies, while its toggle stays ON in System Settings and
+# re-toggling never revives it. Drop the stale entry so the app can re-prompt
+# cleanly. Same story when the app is gone but a leftover entry lingers.
+OLD_REQ=""
 if [ -d "$DEST" ]; then
+  OLD_REQ=$(codesign -d -r- "$DEST" 2>&1 | grep '^designated' || true)
   # ${braces} required: bash 3.2 (/bin/sh) folds a trailing multibyte char
   # into the variable name and set -u aborts on the "unbound" result.
   say "replacing existing ${DEST}…"
+  osascript -e 'quit app "TangentBar"' >/dev/null 2>&1 || true
   rm -rf "$DEST"
 fi
 mv "$TMP/TangentBar.app" "$DEST"
 say "installed → $DEST"
+
+NEW_REQ=$(codesign -d -r- "$DEST" 2>&1 | grep '^designated' || true)
+if [ -z "$OLD_REQ" ] || [ "$OLD_REQ" != "$NEW_REQ" ]; then
+  tccutil reset Accessibility com.whorl.TangentBar >/dev/null 2>&1 || true
+  if [ -n "$OLD_REQ" ]; then
+    say "note: this build's code signature differs from the installed one, so macOS"
+    say "      invalidated the old Accessibility grant. Cleared it — TangentBar will"
+    say "      ask for Accessibility again on launch."
+  fi
+fi
 
 # ------------------------------------------------------------ model wizard
 # Interactive even under `curl | sh` (stdin is the pipe): prompts read from

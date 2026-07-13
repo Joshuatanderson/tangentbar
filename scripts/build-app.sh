@@ -4,8 +4,12 @@
 #   scripts/build-app.sh [version]
 #
 # Output: dist/TangentBar.app and dist/TangentBar-<version>.zip
-# Ad-hoc signed (free path — no Developer ID). The zip is built with
-# `ditto --keepParent` so Finder and the installer both unpack it correctly.
+# Signed with the persistent "TangentBar Release Signing" identity when it is
+# in the keychain (scripts/make-signing-cert.sh) — a stable signature is what
+# lets macOS TCC keep the user's Accessibility grant across updates. Falls
+# back to ad-hoc for throwaway local builds (grant breaks on every rebuild).
+# The zip is built with `ditto --keepParent` so Finder and the installer both
+# unpack it correctly.
 
 set -eu
 cd "$(dirname "$0")/.."
@@ -56,9 +60,18 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> codesign (ad-hoc)"
-codesign --force --sign - "$APP"
+SIGN_IDENTITY="${TANGENTBAR_SIGN_IDENTITY:-TangentBar Release Signing}"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_IDENTITY"; then
+  echo "==> codesign ($SIGN_IDENTITY)"
+  codesign --force --sign "$SIGN_IDENTITY" "$APP"
+else
+  echo "==> codesign (ad-hoc — WARNING: Accessibility grants will NOT survive"
+  echo "    updates of this build; run scripts/make-signing-cert.sh for the"
+  echo "    stable release identity)"
+  codesign --force --sign - "$APP"
+fi
 codesign --verify --deep "$APP"
+codesign -d -r- "$APP" 2>&1 | grep '^designated' || true
 
 ZIP="dist/TangentBar-${VERSION}.zip"
 echo "==> ${ZIP}"
