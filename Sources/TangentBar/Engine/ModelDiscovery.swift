@@ -72,7 +72,7 @@ enum ModelDiscovery {
             // The claude CLI's models, listed after the local ones: pickable
             // any time, but never the auto-selected default — local-first (D7).
             if Engine.claudePath != nil {
-                models += ["haiku", "sonnet", "opus"].map {
+                models += ["haiku", "sonnet", "opus", "fable"].map {
                     LocalModel(id: $0, baseURL: LocalModel.claudeBaseURL)
                 }
             }

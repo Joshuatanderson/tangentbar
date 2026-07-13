@@ -91,11 +91,35 @@ collect_models() {
   for m in $(list_ollama || true); do printf '%s\t%s\n' "$m" "$OLLAMA/v1"; done
 }
 
+# The claude CLI's models — first-class picks in the app's menus, so the
+# wizard offers them too. "claude" is the app's sentinel base URL routing a
+# model through the CLI instead of a local server. The app must probe fixed
+# paths (GUI apps get a bare PATH); here the user's own PATH answers, with
+# the same fixed paths as backup.
+have_claude() {
+  command -v claude >/dev/null 2>&1 && return 0
+  for p in /opt/homebrew/bin/claude /usr/local/bin/claude \
+           "$HOME/.local/bin/claude" "$HOME/.claude/local/claude" \
+           "$HOME/.bun/bin/claude" "$HOME/.volta/bin/claude"; do
+    [ -x "$p" ] && return 0
+  done
+  return 1
+}
+
+collect_claude_models() {
+  have_claude || return 0
+  for m in haiku sonnet opus fable; do printf '%s\t%s\n' "$m" "claude"; done
+}
+
 show_models() {  # numbered menu of $MODELS, with the serving app named
   i=0
   printf '%s\n' "$MODELS" | while IFS="$TAB" read -r m u; do
     i=$((i+1))
-    case "$u" in "$LMSTUDIO"*) s="LM Studio" ;; *) s="Ollama" ;; esac
+    case "$u" in
+      "$LMSTUDIO"*) s="LM Studio" ;;
+      "$OLLAMA"*)   s="Ollama" ;;
+      *)            s="claude CLI" ;;
+    esac
     say "  $i) $m — $s"
   done
 }
@@ -144,10 +168,21 @@ wizard() {
     fi
     MODELS=$(collect_models)
   fi
+
+  # Claude models join the list after the local ones — pickable, never the
+  # nudged default (local-first, D7).
+  CLAUDE_MODELS=$(collect_claude_models)
+  if [ -n "$CLAUDE_MODELS" ]; then
+    if [ -n "$MODELS" ]; then
+      MODELS=$(printf '%s\n%s' "$MODELS" "$CLAUDE_MODELS")
+    else
+      MODELS=$CLAUDE_MODELS
+    fi
+  fi
   [ -z "$MODELS" ] && return 0
 
   say ""
-  say "Local models found:"
+  say "Models found:"
   show_models
 
   say ""
@@ -163,9 +198,10 @@ wizard() {
 
   say ""
   say "CHAT model — powers the drag-to-chat conversations. This one wants real"
-  say "quality (Sonnet/Opus-class or better), which locally means a much bigger"
-  say "model. Press return to reuse the define model for now; if the claude CLI"
-  say "is installed, chats fall back to Sonnet automatically when local fails."
+  say "quality (Sonnet/Opus-class or better). Locally that means a much bigger"
+  say "model; the claude CLI entries are a natural fit here. Press return to"
+  say "reuse the define model — when local fails, chats fall back to Sonnet"
+  say "automatically anyway (if the claude CLI is installed)."
   show_models
   ask "number or return for same-as-define: "
   CHAT=""
