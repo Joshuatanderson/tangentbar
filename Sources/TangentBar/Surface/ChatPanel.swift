@@ -42,6 +42,10 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
     private var onClose: (() -> Void)?
     private var clickAwayMonitor: Any?
     private var previousApp: NSRunningApplication?
+    /// The in-flight assistant reply: raw markdown + where it starts in the
+    /// transcript, so each chunk re-renders just that segment in place.
+    private var assistantBuffer = ""
+    private var assistantStart: Int?
 
     var isVisible: Bool { panel?.isVisible ?? false }
     /// Probe access: what's currently typed in the input field.
@@ -182,12 +186,21 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
     }
 
     func appendUser(_ s: String) {
+        assistantBuffer = ""
+        assistantStart = nil
         append("\nyou — \(s)\n", color: Pill.accent,
                font: .systemFont(ofSize: 12.5, weight: .semibold))
     }
 
     func appendAssistant(_ chunk: String) {
-        append(chunk, color: Pill.ink, font: Self.bodyFont)
+        guard let storage = textView?.textStorage else { return }
+        if assistantStart == nil { assistantStart = storage.length }
+        assistantBuffer += chunk
+        let rendered = Markdown.render(assistantBuffer, baseFont: Self.bodyFont, color: Pill.ink)
+        storage.replaceCharacters(in: NSRange(location: assistantStart!,
+                                              length: storage.length - assistantStart!),
+                                  with: rendered)
+        textView?.scrollToEndOfDocument(nil)
     }
 
     private func append(_ s: String, color: NSColor, font: NSFont) {
@@ -231,6 +244,8 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
         statusField = nil
         input = nil
         onSend = nil
+        assistantBuffer = ""
+        assistantStart = nil
         // Hand focus back to the app the selection came from.
         if wasVisible, previousApp?.isTerminated == false {
             previousApp?.activate()

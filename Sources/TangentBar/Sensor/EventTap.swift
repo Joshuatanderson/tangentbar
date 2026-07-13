@@ -8,8 +8,8 @@
 import AppKit
 
 final class EventTap {
-    /// (global top-left-origin point, ⌥ held, pasteboard changeCount at click)
-    var onDoubleClick: ((CGPoint, Bool, Int) -> Void)?
+    /// (global top-left-origin point, modifier flags, pasteboard changeCount at click)
+    var onDoubleClick: ((CGPoint, CGEventFlags, Int) -> Void)?
     /// A drag ended after covering real distance — likely a text selection.
     /// (mouse-up point, pasteboard changeCount at mouse-down)
     var onDragSelect: ((CGPoint, Int) -> Void)?
@@ -38,11 +38,11 @@ final class EventTap {
             }
             if type == .leftMouseUp, event.getIntegerValueField(.mouseEventClickState) == 2 {
                 let location = event.location
-                let alt = event.flags.contains(.maskAlternate)
+                let flags = event.flags
                 // Snapshot now: copy-on-select apps (ghostty) write the pasteboard
                 // as part of the selection this click just made.
                 let pbCount = NSPasteboard.general.changeCount
-                DispatchQueue.main.async { me.onDoubleClick?(location, alt, pbCount) }
+                DispatchQueue.main.async { me.onDoubleClick?(location, flags, pbCount) }
             } else if type == .leftMouseUp,
                       event.getIntegerValueField(.mouseEventClickState) <= 1 {
                 let location = event.location

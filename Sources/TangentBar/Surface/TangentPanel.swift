@@ -10,6 +10,8 @@ final class TangentPanel {
     private var statusField: NSTextField?
     private var clickAwayMonitor: Any?
     private(set) var onDismiss: (() -> Void)?
+    /// Raw markdown accumulated across chunks; re-rendered whole per append.
+    private var markdownBuffer = ""
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -17,6 +19,7 @@ final class TangentPanel {
                  onDismiss: @escaping () -> Void) {
         dismiss()
         self.onDismiss = onDismiss
+        markdownBuffer = ""
 
         let width: CGFloat = 380
         let height: CGFloat = 240
@@ -102,11 +105,11 @@ final class TangentPanel {
 
     func append(_ chunk: String) {
         guard let textView = textView else { return }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: textView.font ?? .systemFont(ofSize: 13.5),
-            .foregroundColor: Pill.ink,
-        ]
-        textView.textStorage?.append(NSAttributedString(string: chunk, attributes: attrs))
+        markdownBuffer += chunk
+        let rendered = Markdown.render(markdownBuffer,
+                                       baseFont: textView.font ?? .systemFont(ofSize: 13.5),
+                                       color: Pill.ink)
+        textView.textStorage?.setAttributedString(rendered)
         textView.scrollToEndOfDocument(nil)
     }
 

@@ -14,8 +14,11 @@ struct Config: Codable {
     /// is adopted (qwen preferred, then gemma). Switchable from the status
     /// menu's Model submenu.
     var tangentModel = "qwen3.5-0.8b-mlx"
-    /// Model used when falling back to the claude CLI.
+    /// Model used when falling back to the claude CLI for definitions —
+    /// tiny and fast; the definition is disposable.
     var claudeModel = "haiku"
+    /// Claude fallback for chats: conversations want Sonnet-class or better.
+    var claudeChatModel = "sonnet"
     /// Model for selection chats. Empty = same as tangentModel; definitions
     /// want tiny-and-instant, chats can afford something smarter.
     var chatModel = ""
@@ -35,6 +38,10 @@ struct Config: Codable {
     var clipboardFallback = true
     /// Bundle IDs / app names where the trigger is suppressed entirely.
     var excludedApps: [String] = []
+    /// Modifier that must be held with the double-click for it to trigger:
+    /// "none" (bare double-click, the default), "option", "command", "control".
+    /// For users who don't want every double-click to define.
+    var triggerModifier = "none"
 
     // Tolerant decoding: a config.json written by an older build (missing
     // newer keys) must load with defaults filled in, not reset wholesale.
@@ -47,6 +54,7 @@ struct Config: Codable {
         localBaseURL = try c.decodeIfPresent(String.self, forKey: .localBaseURL) ?? d.localBaseURL
         tangentModel = try c.decodeIfPresent(String.self, forKey: .tangentModel) ?? d.tangentModel
         claudeModel = try c.decodeIfPresent(String.self, forKey: .claudeModel) ?? d.claudeModel
+        claudeChatModel = try c.decodeIfPresent(String.self, forKey: .claudeChatModel) ?? d.claudeChatModel
         chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
         chatLocalBaseURL = try c.decodeIfPresent(String.self, forKey: .chatLocalBaseURL) ?? d.chatLocalBaseURL
         usePill = try c.decodeIfPresent(Bool.self, forKey: .usePill) ?? d.usePill
@@ -54,6 +62,7 @@ struct Config: Codable {
         pillTimeout = try c.decodeIfPresent(Double.self, forKey: .pillTimeout) ?? d.pillTimeout
         clipboardFallback = try c.decodeIfPresent(Bool.self, forKey: .clipboardFallback) ?? d.clipboardFallback
         excludedApps = try c.decodeIfPresent([String].self, forKey: .excludedApps) ?? d.excludedApps
+        triggerModifier = try c.decodeIfPresent(String.self, forKey: .triggerModifier) ?? d.triggerModifier
     }
 
     static var url: URL {

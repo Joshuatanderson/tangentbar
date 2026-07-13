@@ -51,12 +51,21 @@ final class Engine {
     }
 
     private func ping(config: Config) {
-        guard let url = URL(string: config.localBaseURL + "/chat/completions") else { return }
+        ping(model: config.tangentModel, baseURL: config.localBaseURL)
+        // A separate chat model gets the same treatment — otherwise the first
+        // chat turn eats the ~7.6 s cold load.
+        if config.resolvedChatModel != config.tangentModel {
+            ping(model: config.resolvedChatModel, baseURL: config.resolvedChatBaseURL)
+        }
+    }
+
+    private func ping(model: String, baseURL: String) {
+        guard let url = URL(string: baseURL + "/chat/completions") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "model": config.tangentModel,
+            "model": model,
             "messages": [["role": "user", "content": "hi"]],
             "max_tokens": 1, "stream": false,
             // LM Studio: keep the JIT model loaded 2 h past the last request,
@@ -69,12 +78,26 @@ final class Engine {
 
     // MARK: Streaming
 
+    /// The claude CLI, if this machine has it. GUI apps launch with a bare
+    /// PATH (/usr/bin:/bin:…), so Homebrew and user installs must be probed
+    /// explicitly; `env claude` only works from a terminal.
+    static let claudePath: String? = {
+        let home = NSHomeDirectory()
+        let candidates = [
+            "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
+            home + "/.local/bin/claude", home + "/.claude/local/claude",
+            home + "/.bun/bin/claude", home + "/.volta/bin/claude",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }()
+
     func streamTangent(word: String, context: String, config: Config,
                        onChunk: @escaping (String) -> Void,
                        onStatus: ((String) -> Void)? = nil,
                        onDone: @escaping (String) -> Void) {
         stream(system: nil, user: Engine.tangentPrompt(word: word, context: context),
                maxTokens: 300, model: config.tangentModel, baseURL: config.localBaseURL,
+               claudeModel: config.claudeModel,
                config: config, onChunk: onChunk, onStatus: onStatus, onDone: onDone)
     }
 
@@ -88,11 +111,12 @@ final class Engine {
         stream(system: Excerpt.system,
                user: Excerpt.prompt(excerpt: excerpt, history: history),
                maxTokens: 700, model: config.resolvedChatModel, baseURL: config.resolvedChatBaseURL,
+               claudeModel: config.claudeChatModel,
                config: config, onChunk: onChunk, onStatus: onStatus, onDone: onDone)
     }
 
     private func stream(system: String?, user: String, maxTokens: Int,
-                        model: String, baseURL: String, config: Config,
+                        model: String, baseURL: String, claudeModel: String, config: Config,
                         onChunk: @escaping (String) -> Void,
                         onStatus: ((String) -> Void)?,
                         onDone: @escaping (String) -> Void) {
@@ -106,7 +130,7 @@ final class Engine {
 
         guard config.provider == "lmstudio",
               let url = URL(string: baseURL + "/chat/completions") else {
-            streamViaClaude(prompt: flatPrompt, model: config.claudeModel, onChunk: onChunk, onDone: onDone)
+            streamViaClaude(prompt: flatPrompt, model: claudeModel, onChunk: onChunk, onDone: onDone)
             return
         }
         let stream = SSEStream(onChunk: onChunk) { [weak self] ok, receivedAny in
@@ -116,11 +140,18 @@ final class Engine {
                 // A user dismissal also lands here (cancel kills the stream
                 // before data) — don't burn a claude call on a closed panel.
                 guard let self, !self.cancelled else { return }
+                guard Engine.claudePath != nil else {
+                    // No local server AND no claude CLI: the honest state,
+                    // not a mystery spawn failure.
+                    onChunk("No model is available. Install Ollama (ollama.com) and pull a model — TangentBar will find it automatically.")
+                    onDone("no model available")
+                    return
+                }
                 // Local server down or empty — fall back to claude. Say so:
                 // claude takes ~16 s and a silent panel reads as a hang.
                 NSLog("local model gave nothing (%@ @ %@) — claude fallback", model, baseURL)
-                onStatus?("\(model) unreachable — asking claude (\(config.claudeModel))…")
-                self.streamViaClaude(prompt: flatPrompt, model: config.claudeModel,
+                onStatus?("\(model) unreachable — asking claude (\(claudeModel))…")
+                self.streamViaClaude(prompt: flatPrompt, model: claudeModel,
                                      onChunk: onChunk, onDone: onDone)
             } else {
                 onDone("stream interrupted")
@@ -139,18 +170,51 @@ final class Engine {
     private func streamViaClaude(prompt: String, model: String,
                                  onChunk: @escaping (String) -> Void,
                                  onDone: @escaping (String) -> Void) {
+        guard let claude = Engine.claudePath else {
+            onChunk("No model is available. Install Ollama (ollama.com) and pull a model — TangentBar will find it automatically.")
+            onDone("no model available")
+            return
+        }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["claude", "-p", prompt, "--model", model]
+        process.executableURL = URL(fileURLWithPath: claude)
+        // stream-json + partial messages = true streaming (plain -p flushes
+        // mostly at once). --verbose is required with -p + stream-json.
+        process.arguments = ["-p", prompt, "--model", model,
+                             "--output-format", "stream-json",
+                             "--include-partial-messages", "--verbose"]
         let stdout = Pipe()
         let stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
 
+        // JSONL parser: text deltas stream as stream_event lines; the final
+        // `result` line carries the whole answer — used only if no deltas
+        // arrived (older CLI without --include-partial-messages).
+        var lineBuffer = Data()
+        var sawDelta = false
+        func handleLine(_ data: Data) {
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = obj["type"] as? String else { return }
+            if type == "stream_event",
+               let event = obj["event"] as? [String: Any],
+               let delta = event["delta"] as? [String: Any],
+               (delta["type"] as? String) == "text_delta",
+               let text = delta["text"] as? String, !text.isEmpty {
+                sawDelta = true
+                DispatchQueue.main.async { onChunk(text) }
+            } else if type == "result", !sawDelta,
+                      let text = obj["result"] as? String, !text.isEmpty {
+                DispatchQueue.main.async { onChunk(text) }
+            }
+        }
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
-            DispatchQueue.main.async { onChunk(s) }
+            guard !data.isEmpty else { return }
+            lineBuffer.append(data)
+            while let nl = lineBuffer.firstIndex(of: 0x0A) {
+                handleLine(lineBuffer.prefix(upTo: nl))
+                lineBuffer = Data(lineBuffer.suffix(from: lineBuffer.index(after: nl)))
+            }
         }
         // Drain stderr or a chatty failure (auth errors) fills the 64 KB pipe
         // and wedges the process — the panel would hang on "asking claude…"
@@ -167,6 +231,10 @@ final class Engine {
         process.terminationHandler = { p in
             stdout.fileHandleForReading.readabilityHandler = nil
             stderr.fileHandleForReading.readabilityHandler = nil
+            if let tail = try? stdout.fileHandleForReading.readToEnd() ?? Data() {
+                lineBuffer.append(tail)
+            }
+            if !lineBuffer.isEmpty { handleLine(lineBuffer) }  // no trailing \n
             let status = p.terminationStatus
             errLock.lock()
             let err = errTail.trimmingCharacters(in: .whitespacesAndNewlines)

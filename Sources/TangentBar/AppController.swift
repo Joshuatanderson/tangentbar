@@ -2,6 +2,7 @@
 // One controller, one flow: double-click → ladder → pill → panel → stream.
 
 import AppKit
+import ServiceManagement
 
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var config = Config.load()
@@ -15,7 +16,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let modelItem = NSMenuItem(title: "Define Model", action: nil, keyEquivalent: "")
     private let chatModelItem = NSMenuItem(title: "Chat Model", action: nil, keyEquivalent: "")
+    private let triggerItem = NSMenuItem(title: "Trigger", action: nil, keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Launch at Login", action: nil, keyEquivalent: "")
+    private let excludeItem = NSMenuItem(title: "Exclude This App", action: nil, keyEquivalent: "")
+    private let excludedListItem = NSMenuItem(title: "Excluded Apps", action: nil, keyEquivalent: "")
+    private let noModelItem = NSMenuItem(title: "No local models — Install Ollama…", action: nil, keyEquivalent: "")
+    private var frontmostForExclude: String?
     private var localModels: [LocalModel] = []
+    /// Badge state: "!" while either problem stands.
+    private var axProblem = false
+    private var noModels = false
     private let extractQueue = DispatchQueue(label: "tangent.extract", qos: .userInitiated)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -68,12 +78,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let prompt = "AXTrustedCheckOptionPrompt" as CFString
         let trusted = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
         if !trusted {
-            setStatusBadge("!")
+            axProblem = true
+            updateBadge()
             // Poll until granted, then arm. (Real onboarding flow replaces this.)
             Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
                 guard AXIsProcessTrusted() else { return }
                 timer.invalidate()
-                self?.setStatusBadge("")
+                self?.axProblem = false
+                self?.updateBadge()
                 self?.armTap()
             }
         }
@@ -81,22 +93,36 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func armTap() {
-        eventTap.onDoubleClick = { [weak self] location, alt, pbCount in
-            self?.handleDoubleClick(at: location, alt: alt, pbCountAtClick: pbCount)
+        eventTap.onDoubleClick = { [weak self] location, flags, pbCount in
+            self?.handleDoubleClick(at: location, flags: flags, pbCountAtClick: pbCount)
         }
         eventTap.onDragSelect = { [weak self] location, pbCountAtDown in
             self?.handleDragSelect(at: location, pbCountAtDown: pbCountAtDown)
         }
         if !eventTap.start() {
-            setStatusBadge("!")
+            axProblem = true
+            updateBadge()
         }
     }
 
     // MARK: The flow
 
-    private func handleDoubleClick(at location: CGPoint, alt: Bool, pbCountAtClick: Int) {
+    /// The modifier each trigger mode requires with the double-click.
+    static let triggerModifiers: [(key: String, label: String, flag: CGEventFlags?)] = [
+        ("none", "Double-Click", nil),
+        ("option", "⌥ + Double-Click", .maskAlternate),
+        ("command", "⌘ + Double-Click", .maskCommand),
+        ("control", "⌃ + Double-Click", .maskControl),
+    ]
+
+    private func handleDoubleClick(at location: CGPoint, flags: CGEventFlags, pbCountAtClick: Int) {
         guard config.enabled else { return }
         guard !panel.isVisible, !chatPanel.isVisible else { return }  // one surface at a time
+        // Trigger mode: users who don't want every double-click to define can
+        // require a held modifier (menu: Trigger submenu).
+        if let required = Self.triggerModifiers.first(where: { $0.key == config.triggerModifier })?.flag,
+           !flags.contains(required) { return }
+        let alt = flags.contains(.maskAlternate)
 
         NSLog("double-click at (%.0f, %.0f) alt=%d", location.x, location.y, alt ? 1 : 0)
         let allowClipboard = config.clipboardFallback
@@ -106,9 +132,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                       pbCountAtClick: pbCountAtClick,
                                                       allowClipboard: allowClipboard,
                                                       excludedApps: excluded)
-            NSLog("extraction: app=%@ ladder=%@ word=%@ hasText=%d",
-                  extraction.app, extraction.ladder, extraction.word ?? "∅",
-                  extraction.hasText ? 1 : 0)
+            // Extracted CONTENT is only logged with --debug; the unified log
+            // is readable by any process (privacy ship-blocker).
+            NSLog("extraction: app=%@ ladder=%@ hasText=%d",
+                  extraction.app, extraction.ladder, extraction.hasText ? 1 : 0)
+            Log.d("extraction word=%@", extraction.word ?? "∅")
             guard let self, extraction.hasText, let word = extraction.word else { return }
             if self.config.excludedApps.contains(extraction.app) { return }
             DispatchQueue.main.async {
@@ -198,7 +226,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.engine.cancel()
         }
         let context = extraction.context ?? word
-        NSLog("openTangent: word=%@ model=%@ context=%d chars", word, config.tangentModel, context.count)
+        NSLog("openTangent: model=%@ context=%d chars", config.tangentModel, context.count)
+        Log.d("openTangent word=%@", word)
         panel.setStatus("thinking… (\(extraction.ladder))")
         var gotFirstChunk = false
         engine.streamTangent(word: word, context: context, config: config,
@@ -263,11 +292,41 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         chatToggle.state = config.chatOnSelect ? .on : .off
         menu.addItem(chatToggle)
 
+        // Trigger mode: bare double-click or modifier + double-click.
+        let trig = NSMenu()
+        for opt in Self.triggerModifiers {
+            let item = NSMenuItem(title: opt.label, action: #selector(selectTrigger(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = opt.key
+            item.state = (opt.key == config.triggerModifier) ? .on : .off
+            trig.addItem(item)
+        }
+        triggerItem.submenu = trig
+        menu.addItem(triggerItem)
+
+        loginItem.action = #selector(toggleLogin(_:))
+        loginItem.target = self
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(loginItem)
+        menu.addItem(.separator())
+
         modelItem.submenu = NSMenu()
         menu.addItem(modelItem)
         chatModelItem.submenu = NSMenu()
         menu.addItem(chatModelItem)
+        noModelItem.action = #selector(openOllamaSite)
+        noModelItem.target = self
+        noModelItem.isHidden = true
+        menu.addItem(noModelItem)
         rebuildModelMenu()
+        menu.addItem(.separator())
+
+        excludeItem.action = #selector(excludeFrontmost(_:))
+        excludeItem.target = self
+        menu.addItem(excludeItem)
+        excludedListItem.submenu = NSMenu()
+        menu.addItem(excludedListItem)
+        rebuildExcludedMenu()
         menu.addItem(.separator())
 
         let test = NSMenuItem(title: "Test Panel", action: #selector(testPanel), keyEquivalent: "")
@@ -275,6 +334,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(test)
         menu.addItem(.separator())
 
+        let version = NSMenuItem(title: "TangentBar \(Self.appVersion)", action: nil, keyEquivalent: "")
+        version.isEnabled = false
+        menu.addItem(version)
         let quit = NSMenuItem(title: "Quit TangentBar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
 
@@ -283,14 +345,86 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
     }
 
-    /// Text badge next to the logo — "!" while a permission/tap problem stands.
-    private func setStatusBadge(_ s: String) {
+    /// Version baked into the bundle's Info.plist by scripts/build-app.sh;
+    /// a bare `swift build` binary has no bundle dictionary → "dev".
+    static let appVersion: String =
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String).map { "v" + $0 } ?? "dev"
+
+    /// Text badge next to the logo — "!" while a permission/tap problem stands
+    /// or no model is reachable; the menu explains which.
+    private func updateBadge() {
+        let s = (axProblem || noModels) ? "!" : ""
         statusItem?.button?.title = s
         statusItem?.button?.imagePosition = s.isEmpty ? .imageOnly : .imageLeft
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        // Captured before our menu opens: status-item clicks don't activate
+        // an accessory app, so the reading app is still frontmost.
+        let front = NSWorkspace.shared.frontmostApplication?.localizedName
+        frontmostForExclude = (front == nil || front == "TangentBar") ? nil : front
+        excludeItem.title = frontmostForExclude.map { "Exclude “\($0)”" } ?? "Exclude This App"
+        excludeItem.isHidden = frontmostForExclude == nil
+            || config.excludedApps.contains(frontmostForExclude!)
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         refreshLocalModels(autoSelect: false)
+    }
+
+    @objc private func selectTrigger(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        config.triggerModifier = key
+        config.save()
+        for item in triggerItem.submenu?.items ?? [] {
+            item.state = (item.representedObject as? String == key) ? .on : .off
+        }
+    }
+
+    /// Launch at Login via SMAppService — only effective from the .app bundle;
+    /// a bare binary throws, which we surface in the log and leave the state off.
+    @objc private func toggleLogin(_ sender: NSMenuItem) {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            NSLog("launch-at-login toggle failed: %@", error.localizedDescription)
+        }
+        sender.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
+    @objc private func openOllamaSite() {
+        NSWorkspace.shared.open(URL(string: "https://ollama.com/download")!)
+    }
+
+    // MARK: Excluded apps
+
+    @objc private func excludeFrontmost(_ sender: NSMenuItem) {
+        guard let app = frontmostForExclude, !config.excludedApps.contains(app) else { return }
+        config.excludedApps.append(app)
+        config.save()
+        rebuildExcludedMenu()
+    }
+
+    @objc private func removeExcluded(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? String else { return }
+        config.excludedApps.removeAll { $0 == app }
+        config.save()
+        rebuildExcludedMenu()
+    }
+
+    private func rebuildExcludedMenu() {
+        excludedListItem.isHidden = config.excludedApps.isEmpty
+        let submenu = excludedListItem.submenu ?? NSMenu()
+        submenu.removeAllItems()
+        for app in config.excludedApps {
+            let item = NSMenuItem(title: "Include “\(app)” again", action: #selector(removeExcluded(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = app
+            submenu.addItem(item)
+        }
+        excludedListItem.submenu = submenu
     }
 
     @objc private func toggleEnabled(_ sender: NSMenuItem) {
@@ -319,6 +453,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ModelDiscovery.discover(including: config.localBaseURL) { [weak self] models in
             guard let self else { return }
             self.localModels = models
+            // First-run reality for strangers: no server, no models. Badge the
+            // status item and surface the "install Ollama" path in the menu.
+            self.noModels = models.isEmpty
+            self.noModelItem.isHidden = !models.isEmpty
+            self.noModelItem.title = Engine.claudePath != nil
+                ? "No local models (claude fallback active) — Install Ollama…"
+                : "No local models — Install Ollama…"
+            self.updateBadge()
             let before = (self.config.tangentModel, self.config.localBaseURL)
             if let current = models.first(where: { $0.id == self.config.tangentModel }) {
                 // Model still served — track its base URL in case it moved servers.
@@ -494,7 +636,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              y: (NSScreen.main?.frame.height ?? 800) / 2)
         panel.present(word: "selftest", sourceApp: "TangentBar", model: config.tangentModel, atCG: center) {}
         panel.setStatus("self-test — auto-closing")
-        let chunks = ["Panel rendered. ", "Streaming appends work. ", "Auto-exit in 3s."]
+        // Markdown across chunk boundaries on purpose: the renderer must heal
+        // a **tag split mid-stream** on the next re-render.
+        let chunks = ["Panel rendered with **bo", "ld**, *italic*, and `code` spans. ",
+                      "Streaming appends work. Auto-exit in 3s."]
         for (i, chunk) in chunks.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [weak self] in
                 self?.panel.append(chunk)
