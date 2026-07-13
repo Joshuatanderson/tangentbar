@@ -275,6 +275,35 @@ enum Extractor {
         return nil
     }
 
+    /// Gecko (Zen, Firefox) publishes NO classic text attributes on web
+    /// content — no AXSelectedText, no AXSelectedTextRange, empty AXValue
+    /// (probed 2026-07-13 against Zen). It speaks the WebKit TextMarker
+    /// dialect instead: opaque marker objects that only round-trip through
+    /// parameterized getters. The double-click/drag has already made the
+    /// selection, so AXSelectedTextMarkerRange → AXStringForTextMarkerRange
+    /// recovers it, and paragraph-of-selection supplies context. The markers
+    /// live on the web area, not the leaf the hit test returns — climb.
+    private static func markerSelection(near el: AXUIElement) -> (word: String, context: String?)? {
+        var node: AXUIElement? = el
+        for _ in 0..<8 {
+            guard let n = node else { return nil }
+            if let sel = attr(n, "AXSelectedTextMarkerRange") {
+                guard let word = paramAttr(n, "AXStringForTextMarkerRange", sel) as? String,
+                      !word.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                var context: String?
+                if let start = paramAttr(n, "AXStartTextMarkerForTextMarkerRange", sel),
+                   let para = paramAttr(n, "AXParagraphTextMarkerRangeForTextMarker", start),
+                   let text = paramAttr(n, "AXStringForTextMarkerRange", para) as? String,
+                   !text.isEmpty {
+                    context = window(around: word, in: text)
+                }
+                return (word, context)
+            }
+            node = attr(n, "AXParent").map { $0 as! AXUIElement }
+        }
+        return nil
+    }
+
     static func extract(at point: CGPoint, retried: Bool = false) -> Extraction {
         var out = Extraction()
         guard let el = element(at: point) else { return out }
@@ -312,6 +341,16 @@ enum Extractor {
                 out.context = String(full[lo..<hi])
                 out.ladder = "2-selection+value"
             }
+            return out
+        }
+
+        // Rung 2m: TextMarker dialect — the only selection route Gecko
+        // offers. (WebKit speaks it too, but its classic attributes win in
+        // the rungs above, so this fires only where nothing else can.)
+        if let m = markerSelection(near: el) {
+            out.ladder = m.context == nil ? "2m-marker-selection" : "2m-marker+paragraph"
+            out.word = m.word
+            out.context = m.context
             return out
         }
 
@@ -361,6 +400,14 @@ enum Extractor {
                 out.ladder = "1-full-ax"
                 return out
             }
+        }
+        // Marker dialect fallback (Gecko): the focused web area holds the
+        // selection but exposes none of the classic attributes read above.
+        if out.word == nil, let m = markerSelection(near: el) {
+            out.word = m.word
+            out.context = m.context
+            out.ladder = m.context == nil ? "2m-marker-selection" : "2m-marker+paragraph"
+            return out
         }
         out.ladder = out.word != nil ? "2-selection-only" : "none"
         return out
