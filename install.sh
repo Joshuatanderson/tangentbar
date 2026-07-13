@@ -65,8 +65,11 @@ ask() {  # ask "prompt" -> $ANS
 }
 
 list_models() {
+  # Same non-chat filter the app's discovery applies (embedding/audio/image
+  # models can't answer a definition).
   curl -fsS --max-time 3 "$OLLAMA/api/tags" 2>/dev/null \
-    | grep -o '"name":"[^"]*"' | sed 's/"name":"//;s/"$//'
+    | grep -o '"name":"[^"]*"' | sed 's/"name":"//;s/"$//' \
+    | grep -viE 'embed|whisper|clip|diffusion'
 }
 
 wizard() {
