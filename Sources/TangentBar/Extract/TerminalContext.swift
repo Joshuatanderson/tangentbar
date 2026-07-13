@@ -36,7 +36,9 @@ enum TerminalContext {
         process.arguments = args
         let stdout = Pipe()
         process.standardOutput = stdout
-        process.standardError = Pipe()
+        // Discard, don't Pipe(): an unread pipe wedges the child once its
+        // buffer fills, and nothing here reads stderr.
+        process.standardError = FileHandle.nullDevice
         do { try process.run() } catch { return nil }
 
         // Read off-process before waiting so a full pipe can't wedge the CLI;

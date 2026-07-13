@@ -59,6 +59,15 @@ final class SSEStream: NSObject, URLSessionDataDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        // Flush the partial-tag holdback: a "<" near the end of the answer was
+        // held as a possible <think> opener that never materialized — without
+        // this, answers ending near a "<" arrive silently truncated.
+        if !insideThink, !carry.isEmpty {
+            let tail = carry
+            carry = ""
+            receivedAny = true
+            DispatchQueue.main.async { self.onChunk(tail) }
+        }
         let ok = error == nil
         let got = receivedAny
         DispatchQueue.main.async { self.onDone(ok, got) }

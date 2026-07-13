@@ -143,19 +143,41 @@ final class Engine {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["claude", "-p", prompt, "--model", model]
         let stdout = Pipe()
+        let stderr = Pipe()
         process.standardOutput = stdout
-        process.standardError = Pipe()
+        process.standardError = stderr
 
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
             DispatchQueue.main.async { onChunk(s) }
         }
+        // Drain stderr or a chatty failure (auth errors) fills the 64 KB pipe
+        // and wedges the process — the panel would hang on "asking claude…"
+        // forever. Keep a short tail so a non-zero exit can say why.
+        var errTail = ""
+        let errLock = NSLock()
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+            errLock.lock()
+            errTail = String((errTail + s).suffix(300))
+            errLock.unlock()
+        }
         process.terminationHandler = { p in
             stdout.fileHandleForReading.readabilityHandler = nil
+            stderr.fileHandleForReading.readabilityHandler = nil
             let status = p.terminationStatus
+            errLock.lock()
+            let err = errTail.trimmingCharacters(in: .whitespacesAndNewlines)
+            errLock.unlock()
             DispatchQueue.main.async {
-                onDone(status == 0 ? "done · \(model) (fallback)" : "model error (exit \(status))")
+                if status == 0 {
+                    onDone("done · \(model) (fallback)")
+                } else {
+                    if !err.isEmpty { onChunk("[claude error] \(err)") }
+                    onDone("model error (exit \(status))")
+                }
             }
         }
         do {

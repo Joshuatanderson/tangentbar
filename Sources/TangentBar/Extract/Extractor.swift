@@ -17,6 +17,9 @@ struct Extraction {
     var app = "?"
     var appPid: pid_t = 0
     var role = "?"
+    /// Password fields: native ones report role AXSecureTextField, but web
+    /// password inputs are AXTextField with subrole AXSecureTextField.
+    var secure = false
     var ladder = "none"
     var word: String?
     var context: String?
@@ -79,6 +82,14 @@ enum Extractor {
         return el
     }
 
+    /// Secure text: native fields wear the role; web password inputs are plain
+    /// AXTextField carrying the subrole (Chromium and WebKit both). Either one
+    /// suppresses every rung — including 3b, which would ⌘C the password.
+    private static func isSecure(_ el: AXUIElement, role: String) -> Bool {
+        if role == "AXSecureTextField" { return true }
+        return (attr(el, "AXSubrole") as? String) == "AXSecureTextField"
+    }
+
     /// Chromium exposes its reduced tree until assistive tech announces itself;
     /// Electron's variant is AXManualAccessibility. Lazy, per-pid, once.
     private static var nudged = Set<pid_t>()
@@ -100,13 +111,13 @@ enum Extractor {
         var byPoint = extract(at: point)
         // Own windows never trigger.
         if byPoint.appPid == ProcessInfo.processInfo.processIdentifier { return Extraction() }
-        if byPoint.role == "AXSecureTextField" { return Extraction() }
+        if byPoint.secure { return Extraction() }
         // Excluded apps bail BEFORE the invasive rungs — 3b would synthesize
         // ⌘C into them (games interpret keystrokes).
         if excludedApps.contains(byPoint.app) { return Extraction() }
 
         var bySelection = extractFocused()
-        if bySelection.role == "AXSecureTextField" { return Extraction() }
+        if bySelection.secure { return Extraction() }
 
         // Chromium's AXSelectedText can be pure U+FFFC (object replacement) —
         // a garbage "word" that would otherwise win the ladder. Clean both
@@ -186,7 +197,7 @@ enum Extractor {
     static func forSelection(pbCountAtDragStart: Int) -> (selection: String, source: String?, app: String)? {
         let focused = extractFocused()
         if focused.appPid == ProcessInfo.processInfo.processIdentifier { return nil }
-        if focused.role == "AXSecureTextField" { return nil }
+        if focused.secure { return nil }
 
         var selection = focused.word?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         selection = selection.replacingOccurrences(of: "\u{FFFC}", with: " ")
@@ -271,8 +282,9 @@ enum Extractor {
         out.appPid = pid
         out.app = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
         out.role = (attr(el, "AXRole") as? String) ?? "?"
+        out.secure = isSecure(el, role: out.role)
         out.element = el
-        if out.role == "AXSecureTextField" { return out }
+        if out.secure { return out }
 
         // Rung 1: char range at point + a context window around it.
         if let hit = cfRange(paramAttr(el, "AXRangeForPosition", axValue(point))) {
@@ -331,8 +343,9 @@ enum Extractor {
         out.appPid = pid
         out.app = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
         out.role = (attr(el, "AXRole") as? String) ?? "?"
+        out.secure = isSecure(el, role: out.role)
         out.element = el
-        if out.role == "AXSecureTextField" { return out }
+        if out.secure { return out }
 
         out.word = attr(el, "AXSelectedText") as? String
         if out.word?.isEmpty == true { out.word = nil }
