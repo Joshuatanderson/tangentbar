@@ -103,7 +103,8 @@ URL=$(curl -fsSL "$API" \
 [ -n "$URL" ] || die "no release zip found at ${API} (check https://github.com/${REPO}/releases)"
 
 TMP=$(mktemp -d /tmp/tangentbar.XXXXXX)
-trap 'rm -rf "$TMP"' EXIT
+# Also restore the terminal if we die mid-menu (raw mode, hidden cursor).
+trap 'rm -rf "$TMP"; if [ -n "${M_OLDSTTY:-}" ]; then { stty "$M_OLDSTTY" < /dev/tty; printf "\033[?25h" > /dev/tty; } 2>/dev/null || true; fi' EXIT
 
 say "downloading $(basename "$URL")…"
 curl -fsSL -o "$TMP/TangentBar.zip" "$URL"
@@ -198,17 +199,97 @@ collect_claude_models() {
   for m in haiku sonnet opus fable; do printf '%s\t%s\n' "$m" "claude"; done
 }
 
-show_models() {  # numbered menu of $MODELS, with the serving app named
-  i=0
+model_labels() {  # one display label per $MODELS line, serving app named
   printf '%s\n' "$MODELS" | while IFS="$TAB" read -r m u; do
-    i=$((i+1))
     case "$u" in
       "$LMSTUDIO"*) s="LM Studio" ;;
       "$OLLAMA"*)   s="Ollama" ;;
       *)            s="claude CLI" ;;
     esac
-    printf '%s│%s    %s%2d)%s %s %s— %s%s\n' "$DIM" "$RST" "$BLD" "$i" "$RST" "$m" "$DIM" "$s" "$RST"
+    printf '%s  (%s)\n' "$m" "$s"
   done
+}
+
+# ---- arrow-key menu (clack-style), still zero dependencies ----------------
+# menu_select "<label lines>" <initial index> -> $MENU_IDX (1-based).
+# ↑↓ / j k move, return selects, 1-9 jumps. Renders to /dev/tty and collapses
+# to nothing when done (the caller prints the chosen value). Falls back to a
+# numeric prompt when the tty can't do raw mode.
+M_OLDSTTY=""
+ESCCH=$(printf '\033')
+
+m_draw() {  # $1 = 1 → repaint over the previous render
+  {
+    [ "${1:-0}" = 1 ] && printf '\033[%dA' $((M_COUNT + 1))
+    i=0
+    printf '%s\n' "$M_LINES" | while IFS= read -r line; do
+      i=$((i+1))
+      if [ "$i" -eq "$M_CUR" ]; then
+        printf '\r\033[2K%s│%s  %s%s❯ %s%s\n' "$DIM" "$RST" "$ACC" "$BLD" "$line" "$RST"
+      else
+        printf '\r\033[2K%s│    %s%s\n' "$DIM" "$line" "$RST"
+      fi
+    done
+    printf '\r\033[2K%s│  ↑↓ move · return select%s\n' "$DIM" "$RST"
+  } > /dev/tty
+}
+
+m_clear() {  # erase the rendered menu, leave the cursor where it began
+  {
+    printf '\033[%dA' $((M_COUNT + 1))
+    i=0
+    while [ "$i" -le "$M_COUNT" ]; do printf '\r\033[2K\n'; i=$((i+1)); done
+    printf '\033[%dA' $((M_COUNT + 1))
+  } > /dev/tty
+}
+
+menu_select() {
+  M_LINES=$1
+  M_COUNT=$(printf '%s\n' "$M_LINES" | grep -c .)
+  M_CUR=${2:-1}
+  if [ "$M_COUNT" -le 1 ]; then MENU_IDX=1; return 0; fi
+  if ! M_OLDSTTY=$(stty -g < /dev/tty 2>/dev/null); then
+    # No raw tty (weird shells): plain numeric prompt.
+    i=0
+    printf '%s\n' "$M_LINES" | while IFS= read -r line; do
+      i=$((i+1)); printf '%s│%s   %s%d)%s %s\n' "$DIM" "$RST" "$BLD" "$i" "$RST" "$line"
+    done > /dev/tty
+    ask "number [${M_CUR}]: "
+    N=$(printf '%s' "${ANS:-$M_CUR}" | tr -cd '0-9')
+    { [ -n "$N" ] && [ "$N" -ge 1 ] && [ "$N" -le "$M_COUNT" ]; } || N=$M_CUR
+    MENU_IDX=$N
+    return 0
+  fi
+  stty -icanon -echo min 1 time 0 < /dev/tty
+  printf '\033[?25l' > /dev/tty
+  m_draw 0
+  while :; do
+    key=$(dd bs=1 count=1 < /dev/tty 2>/dev/null || true)
+    case "$key" in
+      "")  break ;;  # return (the captured newline is stripped)
+      j)   M_CUR=$((M_CUR % M_COUNT + 1)) ;;
+      k)   M_CUR=$(( (M_CUR + M_COUNT - 2) % M_COUNT + 1 )) ;;
+      [1-9])
+        if [ "$key" -le "$M_COUNT" ]; then M_CUR=$key; m_draw 1; break; fi ;;
+      "$ESCCH")
+        stty min 0 time 2 < /dev/tty
+        b2=$(dd bs=1 count=1 < /dev/tty 2>/dev/null || true)
+        b3=$(dd bs=1 count=1 < /dev/tty 2>/dev/null || true)
+        stty min 1 time 0 < /dev/tty
+        if [ "$b2" = "[" ]; then
+          case "$b3" in
+            A) M_CUR=$(( (M_CUR + M_COUNT - 2) % M_COUNT + 1 )) ;;
+            B) M_CUR=$((M_CUR % M_COUNT + 1)) ;;
+          esac
+        fi ;;
+    esac
+    m_draw 1
+  done
+  m_clear
+  stty "$M_OLDSTTY" < /dev/tty
+  M_OLDSTTY=""
+  printf '\033[?25h' > /dev/tty
+  MENU_IDX=$M_CUR
 }
 
 pick_line() {  # pick_line <number> -> "<id><TAB><baseURL>" (empty if out of range)
@@ -314,41 +395,28 @@ wizard() {
 
   gather_all_models
   [ -z "$MODELS" ] && return 0
+  LABELS=$(model_labels)
 
   say ""
-  step "models found"
-  show_models
-
-  say ""
-  say "${BLD}DEFINE model${RST} — answers the double-click definitions. Pick something very"
-  say "small and lightweight (≤2B parameters): instant beats smart here."
-  ask "number [1]: "
-  N=$(printf '%s' "${ANS:-1}" | tr -cd '0-9')
-  LINE=$(pick_line "${N:-1}")
-  [ -z "$LINE" ] && LINE=$(pick_line 1)
+  step "${BLD}DEFINE model${RST} — answers double-click definitions. Small and instant beats smart (≤2B ideal)."
+  menu_select "$LABELS" 1
+  LINE=$(pick_line "$MENU_IDX")
   DEFINE=${LINE%%"$TAB"*}
   DEFINE_URL=${LINE##*"$TAB"}
-  step "define model → $DEFINE"
+  step "define model → ${BLD}$DEFINE${RST}"
 
   say ""
-  say "${BLD}CHAT model${RST} — powers the drag-to-chat conversations. This one wants real"
-  say "quality (Sonnet/Opus-class or better). Locally that means a much bigger"
-  say "model; the claude CLI entries are a natural fit here. Press return to"
-  say "reuse the define model — when local fails, chats fall back to Sonnet"
-  say "automatically anyway (if the claude CLI is installed)."
-  show_models
-  ask "number or return for same-as-define: "
+  step "${BLD}CHAT model${RST} — powers drag-to-chat. Wants real quality (Sonnet/Opus-class); the claude CLI entries fit here."
+  CHAT_MENU=$(printf '%s\n%s' "Same as define  (local fails → Sonnet fallback)" "$LABELS")
+  menu_select "$CHAT_MENU" 1
   CHAT=""
   CHAT_URL=""
-  N=$(printf '%s' "$ANS" | tr -cd '0-9')
-  if [ -n "$N" ]; then
-    LINE=$(pick_line "$N")
-    if [ -n "$LINE" ]; then
-      CHAT=${LINE%%"$TAB"*}
-      CHAT_URL=${LINE##*"$TAB"}
-    fi
+  if [ "$MENU_IDX" -gt 1 ]; then
+    LINE=$(pick_line $((MENU_IDX - 1)))
+    CHAT=${LINE%%"$TAB"*}
+    CHAT_URL=${LINE##*"$TAB"}
   fi
-  step "chat model → ${CHAT:-same as define}"
+  step "chat model → ${BLD}${CHAT:-same as define}${RST}"
 
   write_config "$DEFINE" "$DEFINE_URL" "$CHAT" "$CHAT_URL"
 }
