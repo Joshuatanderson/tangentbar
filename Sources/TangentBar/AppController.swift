@@ -356,9 +356,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildExcludedMenu()
         menu.addItem(.separator())
 
+        // Dev submenu: maintenance hatches that don't belong in daily use.
+        let dev = NSMenu()
         let test = NSMenuItem(title: "Test Panel", action: #selector(testPanel), keyEquivalent: "")
         test.target = self
-        menu.addItem(test)
+        dev.addItem(test)
+        let openCfg = NSMenuItem(title: "Open Config File", action: #selector(devOpenConfig), keyEquivalent: "")
+        openCfg.target = self
+        dev.addItem(openCfg)
+        let resetAX = NSMenuItem(title: "Reset Accessibility Permission…", action: #selector(devResetAccessibility), keyEquivalent: "")
+        resetAX.target = self
+        dev.addItem(resetAX)
+        dev.addItem(.separator())
+        let uninstall = NSMenuItem(title: "Uninstall TangentBar…", action: #selector(devUninstall), keyEquivalent: "")
+        uninstall.target = self
+        dev.addItem(uninstall)
+        let devItem = NSMenuItem(title: "Dev", action: nil, keyEquivalent: "")
+        devItem.submenu = dev
+        menu.addItem(devItem)
         menu.addItem(.separator())
 
         let version = NSMenuItem(title: "TangentBar \(Self.appVersion)", action: nil, keyEquivalent: "")
@@ -585,6 +600,61 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.present(word: "tangent", sourceApp: "TangentBar", model: config.tangentModel, atCG: mouse) {}
         panel.setStatus("canned demo — click outside to dismiss")
         panel.append("A line that touches a curve at a single point without crossing it; figuratively, a sudden divergence from the main subject — exactly the kind this app exists to indulge.")
+    }
+
+    // MARK: Dev menu
+
+    @objc private func devOpenConfig() {
+        if !FileManager.default.fileExists(atPath: Config.url.path) { config.save() }
+        NSWorkspace.shared.open(Config.url)
+    }
+
+    @objc private func devResetAccessibility() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Reset Accessibility permission?"
+        alert.informativeText = "Clears TangentBar's entry in Privacy & Security so macOS can re-prompt cleanly. TangentBar quits afterwards — relaunch it to grant again."
+        alert.addButton(withTitle: "Reset & Quit")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        p.arguments = ["reset", "Accessibility", "com.whorl.TangentBar"]
+        try? p.run()
+        p.waitUntilExit()
+        NSApp.terminate(nil)
+    }
+
+    @objc private func devUninstall() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Uninstall TangentBar?"
+        alert.informativeText = "Removes the app from /Applications, deletes its config, and clears its macOS permission entries. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Uninstall")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let bundled = Bundle.main.url(forResource: "uninstall", withExtension: "sh") else {
+            let oops = NSAlert()
+            oops.messageText = "No uninstall script in this build"
+            oops.informativeText = "Bare `swift build` binaries don't bundle uninstall.sh — run it from the repo instead."
+            oops.runModal()
+            return
+        }
+        // The script deletes the .app it shipped in (and kills this process),
+        // so it must run from OUTSIDE the bundle: copy to tmp, run detached.
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tangentbar-uninstall.sh")
+        try? FileManager.default.removeItem(at: tmp)
+        do {
+            try FileManager.default.copyItem(at: bundled, to: tmp)
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            p.arguments = [tmp.path]
+            try p.run()
+        } catch {
+            NSLog("uninstall launch failed: %@", "\(error)")
+        }
     }
 
     // MARK: Diagnostics (no interaction, auto-exit)

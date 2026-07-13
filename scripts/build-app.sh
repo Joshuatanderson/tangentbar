@@ -26,6 +26,8 @@ echo "==> assembling ${APP} (version ${VERSION})"
 rm -rf dist
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/TangentBar "$APP/Contents/MacOS/TangentBar"
+# Bundled so the Dev menu's "Uninstall TangentBar…" can run it offline.
+cp uninstall.sh "$APP/Contents/Resources/uninstall.sh"
 
 # Icon: iconset from the 1024 master, downscaled per slot.
 if [ -f assets/icon@1024.png ]; then

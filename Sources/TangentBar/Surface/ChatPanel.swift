@@ -3,12 +3,24 @@
 // The app genuinely ACTIVATES while the chat is open: dictation tools (Wispr
 // Flow) resolve their target via the system AX focused element, which only
 // points at our input when we're the active app. Focus is handed back to the
-// source app on dismiss. Closes on Esc, ✕, or a click outside.
+// source app on dismiss. Closes on Esc or ✕ ONLY — unlike the define panel,
+// a chat carries conversation state, so a stray click outside must not
+// destroy it (D10). The panel floats until explicitly closed.
 
 import AppKit
 
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// Esc closes the chat no matter what has focus. The input field's
+    /// delegate already catches Esc while editing; this catches it when the
+    /// transcript or the panel itself is first responder.
+    var onCancel: (() -> Void)?
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onCancel?(); return }  // 53 = Escape
+        super.keyDown(with: event)
+    }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
 
     /// Accessory apps have no menu bar, so ⌘V/⌘C/… don't reliably route via
     /// NSApp.mainMenu — dispatch the standard editing actions ourselves.
@@ -40,7 +52,6 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
     private var input: NSTextField?
     private var onSend: ((String) -> Void)?
     private var onClose: (() -> Void)?
-    private var clickAwayMonitor: Any?
     private var previousApp: NSRunningApplication?
     /// The in-flight assistant reply: raw markdown + where it starts in the
     /// transcript, so each chunk re-renders just that segment in place.
@@ -171,11 +182,9 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
         appendQuote(excerpt)
         panel.makeFirstResponder(inputField)
 
-        // Click-away dismissal: global monitors see clicks in OTHER apps —
-        // any click outside while we're active lands there.
-        clickAwayMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.dismiss()
-        }
+        // No click-away dismissal here (D10): the define panel is throwaway,
+        // a chat is not. Esc and ✕ are the only exits.
+        panel.onCancel = { [weak self] in self?.dismiss() }
     }
 
     // MARK: Transcript
@@ -235,8 +244,6 @@ final class ChatPanel: NSObject, NSTextFieldDelegate {
     @objc private func closeClicked() { dismiss() }
 
     func dismiss() {
-        if let monitor = clickAwayMonitor { NSEvent.removeMonitor(monitor) }
-        clickAwayMonitor = nil
         let wasVisible = panel?.isVisible ?? false
         panel?.orderOut(nil)
         panel = nil
