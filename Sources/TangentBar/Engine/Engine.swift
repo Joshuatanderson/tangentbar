@@ -60,7 +60,8 @@ final class Engine {
     }
 
     private func ping(model: String, baseURL: String) {
-        guard let url = URL(string: baseURL + "/chat/completions") else { return }
+        guard baseURL != LocalModel.claudeBaseURL,
+              let url = URL(string: baseURL + "/chat/completions") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -130,6 +131,11 @@ final class Engine {
         // The claude fallback takes one flat prompt; fold the system in.
         let flatPrompt = system.map { $0 + "\n\n" + user } ?? user
 
+        // A deliberately selected claude model routes straight to the CLI.
+        if baseURL == LocalModel.claudeBaseURL {
+            streamViaClaude(prompt: flatPrompt, model: model, onChunk: onChunk, onDone: onDone)
+            return
+        }
         guard config.provider == "lmstudio",
               let url = URL(string: baseURL + "/chat/completions") else {
             streamViaClaude(prompt: flatPrompt, model: claudeModel, onChunk: onChunk, onDone: onDone)
@@ -249,7 +255,7 @@ final class Engine {
             errLock.unlock()
             DispatchQueue.main.async {
                 if status == 0 {
-                    onDone("done · \(model) (fallback)")
+                    onDone("done · \(model) · claude")
                 } else {
                     if !err.isEmpty { onChunk("[claude error] \(err)") }
                     onDone("model error (exit \(status))")

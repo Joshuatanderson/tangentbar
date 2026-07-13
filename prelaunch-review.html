@@ -76,6 +76,8 @@
     <h2>Update — evening session, 2026-07-12</h2>
     <div class="callout arch"><b>Done since the review above was written</b>
       All three P1 bugs are <strong>fixed and building clean</strong> (secure-subrole suppression, stderr drain on the claude fallback, carry flush in <code>SSEStream</code>). The <strong>curl-installer path is built and tested locally</strong>: <code>scripts/build-app.sh</code> assembles, signs, and zips <code>TangentBar.app</code> (selftest passes from the bundle), and <code>install.sh</code> at the repo root is the <code>curl | sh</code> target. Still open before publish: word-log gating, the no-model first-run state, version in the menu, README + LICENSE, and creating the GitHub repo — see the rescoped D2.</div>
+    <div class="callout arch"><b>Shipped — 2026-07-13</b>
+      Decisions executed in full: <strong>v0.1.0 and v0.1.1 are live at <code>github.com/Joshuatanderson/tangentbar</code></strong>, both release zips built by the CI release workflow. All three P2 bugs fixed (badges updated below), 17 unit tests green (the suite immediately caught a fourth real bug: a <code>&lt;/think&gt;</code> tag split across chunks swallowed the whole answer), markdown rendering verified by screenshot, the installer wizard verified end-to-end via a scripted TTY against live Ollama, and the installed app upgraded to 0.1.1 through the real <code>curl | sh</code> path — which also surfaced and fixed a bash 3.2 <code>set -u</code> unicode gotcha on the replace-existing branch.</div>
   </section>
 
   <section>
@@ -120,17 +122,17 @@
         <td><code>SSEStream.swift:61‑65, 86‑89</code></td>
       </tr>
       <tr>
-        <td><span class="sev p2">P2</span></td>
+        <td><span class="sev fixed">FIXED</span></td>
         <td><strong>Clipboard rescue can destroy a non-text clipboard.</strong> Rung 3b saves only the <em>string</em> flavor before synthesizing ⌘C. If the user's clipboard held an image or file, restore writes nothing back — their clipboard is silently wiped. The TODO is already in the code; fix is to snapshot all <code>pasteboardItems</code> flavors. Also worth a one-line disclosure in the README (clipboard managers will record the synthetic copy).</td>
         <td><code>Extractor.swift:369‑396</code></td>
       </tr>
       <tr>
-        <td><span class="sev p2">P2</span></td>
+        <td><span class="sev fixed">FIXED</span></td>
         <td><strong>Triple-click and double-click-drag both fire a define.</strong> The trigger is <code>mouseUp</code> with <code>clickState == 2</code>, which also matches the second click of a triple-click (select-paragraph) and the end of a double-click-drag (select-by-words). Users who triple-click to select a line get a surprise definition panel. Cheap partial fix: ignore when the up-point traveled &gt;8&nbsp;px from down (drag case); the triple-click case needs a ~250&nbsp;ms defer to see if a third click lands.</td>
         <td><code>EventTap.swift:39</code></td>
       </tr>
       <tr>
-        <td><span class="sev p2">P2</span></td>
+        <td><span class="sev fixed">FIXED</span></td>
         <td><strong>A pure-reasoning response triggers a spurious claude fallback.</strong> <code>receivedAny</code> is only set when <em>visible</em> text survives think-stripping — a response that's all <code>&lt;think&gt;</code> (small models sometimes burn the whole token budget thinking) reads as "server gave nothing" and silently burns a 16&nbsp;s claude call. Track raw-chunks-received separately from visible-chunks.</td>
         <td><code>SSEStream.swift:53‑57</code> · <code>Engine.swift:117‑124</code></td>
       </tr>

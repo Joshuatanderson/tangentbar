@@ -482,8 +482,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.localModels = models
             // First-run reality for strangers: no server, no models. Badge the
             // status item and surface the "install Ollama" path in the menu.
-            self.noModels = models.isEmpty
-            self.noModelItem.isHidden = !models.isEmpty
+            // Claude entries don't count — the hint is about LOCAL models.
+            let hasLocal = models.contains { !$0.isClaude }
+            self.noModels = !hasLocal
+            self.noModelItem.isHidden = hasLocal
             self.noModelItem.title = Engine.claudePath != nil
                 ? "No local models (claude fallback active) — Install Ollama…"
                 : "No local models — Install Ollama…"
@@ -495,7 +497,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.config.localBaseURL = current.baseURL
                     self.config.save()
                 }
-            } else if autoSelect, let best = models.first {
+            } else if autoSelect, let best = models.first(where: { !$0.isClaude }) ?? models.first {
+                // Local-first (D7): a claude entry is only auto-adopted when
+                // there is no local model at all. Explicit picks always stick.
                 self.config.tangentModel = best.id
                 self.config.localBaseURL = best.baseURL
                 self.config.save()

@@ -9,8 +9,15 @@ struct LocalModel: Equatable {
     let id: String
     let baseURL: String
 
+    /// Sentinel baseURL routing this model through the claude CLI instead of
+    /// a local HTTP server. Claude models are offered as first-class picks
+    /// whenever the CLI is installed — not just as the automatic fallback.
+    static let claudeBaseURL = "claude"
+    var isClaude: Bool { baseURL == LocalModel.claudeBaseURL }
+
     var server: String {
-        baseURL.contains(":11434") ? "Ollama" : "LM Studio"
+        if isClaude { return "claude CLI" }
+        return baseURL.contains(":11434") ? "Ollama" : "LM Studio"
     }
 }
 
@@ -61,7 +68,15 @@ enum ModelDiscovery {
         }
 
         group.notify(queue: .main) {
-            completion(found.sorted { (rank($0.id), $0.id) < (rank($1.id), $1.id) })
+            var models = found.sorted { (rank($0.id), $0.id) < (rank($1.id), $1.id) }
+            // The claude CLI's models, listed after the local ones: pickable
+            // any time, but never the auto-selected default — local-first (D7).
+            if Engine.claudePath != nil {
+                models += ["haiku", "sonnet", "opus"].map {
+                    LocalModel(id: $0, baseURL: LocalModel.claudeBaseURL)
+                }
+            }
+            completion(models)
         }
     }
 }

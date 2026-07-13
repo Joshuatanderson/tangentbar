@@ -39,7 +39,9 @@ Everything runs against **your** local models, switchable from the menu-bar icon
 - **Define model** — answers double-click definitions. Pick something tiny and fast (≤2B parameters); instant beats smart here. Measured ~0.16 s warm on a small qwen.
 - **Chat model** — powers the selection chats. Quality matters more; pick your biggest local model, or leave it as "same as define".
 
-If no local server answers and the [claude CLI](https://claude.com/claude-code) is installed, TangentBar falls back to it (haiku for definitions, sonnet for chats). No local models *and* no claude CLI → an honest "no model available" message, never a hang.
+The menu lists whatever your servers actually serve — discovered live at launch and every time the menu opens, never hardcoded.
+
+**Claude models are first-class options too:** if the [claude CLI](https://claude.com/claude-code) is installed, `haiku` / `sonnet` / `opus` appear in both model menus and can be selected outright (they route through your existing claude auth — still no API key). They're never auto-picked over a local model; and if a local server stops answering mid-use, TangentBar falls back to claude automatically (haiku for definitions, sonnet for chats). No local models *and* no claude CLI → an honest "no model available" message, never a hang.
 
 ## Privacy
 
