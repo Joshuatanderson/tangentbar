@@ -6,3 +6,6 @@ spike/axspike
 # machine-local
 .hippo/
 .DS_Store
+
+# release artifacts
+dist/
