@@ -21,6 +21,15 @@ curl -fsSL https://raw.githubusercontent.com/Joshuatanderson/tangentbar/main/ins
 
 The script downloads the latest release into `/Applications`, walks you through picking local models (it will point you at [Ollama](https://ollama.com) if you don't have a model server yet), and opens the app. Installing via `curl` also means macOS never applies the quarantine flag, so the unsigned build opens without Gatekeeper friction.
 
+**Homebrew instead?** The cask is served from this repo (no separate tap repo):
+
+```sh
+brew tap joshuatanderson/tangentbar https://github.com/Joshuatanderson/tangentbar
+brew install --cask tangentbar --no-quarantine
+```
+
+`--no-quarantine` matters: the app isn't notarized, and brew re-applies the quarantine flag without it. Updates arrive via `brew upgrade` like any other cask.
+
 **Manual download instead?** Grab the zip from [Releases](https://github.com/Joshuatanderson/tangentbar/releases), then clear the quarantine flag before first open (the app is not notarized — macOS 15+ shows *"damaged and can't be opened"* otherwise):
 
 ```sh

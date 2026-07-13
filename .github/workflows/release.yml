@@ -23,3 +23,18 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/TangentBar-*.zip \
             --title "TangentBar $GITHUB_REF_NAME" \
             --generate-notes
+      - name: Bump Homebrew cask
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(shasum -a 256 "dist/TangentBar-${VERSION}.zip" | cut -d' ' -f1)
+          git fetch origin main
+          git checkout main
+          sed -i '' \
+            -e "s/^  version .*/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 .*/  sha256 \"${SHA}\"/" \
+            Casks/tangentbar.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/tangentbar.rb
+          git commit -m "brew: cask ${VERSION}"
+          git push origin main
